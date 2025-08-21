@@ -1,6 +1,8 @@
 
 # Bonsai
 
+![alt text](img/bonsai.png)
+
 Bonsai is a fast, lightweight, and scalable URL shortener written in Go. It allows you to create short, shareable links that redirect to long URLs, making it easy to manage and track your links.
 
 ## Features
