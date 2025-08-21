@@ -2,15 +2,16 @@
 package main
 
 import (
-	"github.com/sirupsen/logrus"
+	"context"
 
 	"github.com/roguepikachu/bonsai/internal/http/router"
+	"github.com/roguepikachu/bonsai/pkg/logger"
 )
 
 func main() {
 	router := router.Router()
-	err := router.Run("localhost:8080")
+	err := router.Run(":8080")
 	if err != nil {
-		logrus.Fatalf("Failed to start server: %v", err)
+		logger.Fatal(context.Background(), "Failed to start server: %v", err)
 	}
 }
