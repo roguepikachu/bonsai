@@ -1,8 +1,3 @@
-# Makefile for Bonsai project
-DOCKER_COMPOSE = docker-compose -f docker/docker-compose.yaml
-
-.PHONY: lint
-
 lint: fmt
 	golangci-lint run
 
@@ -21,3 +16,23 @@ redis-logs:
 	$(DOCKER_COMPOSE) logs -f redis
 
 redis-restart: redis-down redis-up
+
+# Build the bonsai binary
+.PHONY: build
+build:
+	go build -o bonsai ./cmd/api/main.go
+
+# Run the bonsai server (from source)
+.PHONY: run
+run:
+	go run ./cmd/api/main.go
+
+# Build Docker image
+.PHONY: docker-build
+docker-build:
+	docker build -t bonsai:latest .
+
+# Run bonsai binary (after build)
+.PHONY: start
+start:
+	./bonsai
