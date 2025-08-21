@@ -1,7 +1,9 @@
 
 # Bonsai
 
-![alt text](img/bonsai.png)
+<p align="center">
+  <img src="img/bonsai.png" alt="Bonsai logo" width="200"/>
+</p>
 
 Bonsai is a fast, lightweight, and scalable URL shortener written in Go. It allows you to create short, shareable links that redirect to long URLs, making it easy to manage and track your links.
 
@@ -22,7 +24,9 @@ Bonsai is a fast, lightweight, and scalable URL shortener written in Go. It allo
 Clone the repository:
 ```sh
 git clone https://github.com/yourusername/bonsai.git
-cd bonsai
+<div align="center">
+	<img src="img/bonsai.png" alt="Bonsai logo" width="200"/>
+</div>
 ```
 Build the project:
 ```sh
