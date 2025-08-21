@@ -1,3 +1,4 @@
+// Package logger provides logging utilities for the Bonsai application.
 package logger
 
 import (
@@ -49,26 +50,32 @@ func setLogLevel(level string) {
 	logrus.Infof("Setting logging level to %s", level)
 }
 
+// Info logs an informational message with optional formatting arguments.
 func Info(_ context.Context, msg string, args ...interface{}) {
 	logrus.Infof(msg, args...)
 }
 
+// Debug logs a debug message with optional formatting arguments.
 func Debug(_ context.Context, msg string, args ...any) {
 	logrus.Debugf(msg, args...)
 }
 
+// Error logs an error message with optional formatting arguments.
 func Error(_ context.Context, msg string, args ...any) {
 	logrus.Errorf(msg, args...)
 }
 
+// Trace logs a trace message with optional formatting arguments.
 func Trace(_ context.Context, msg string, args ...any) {
 	logrus.Tracef(msg, args...)
 }
 
+// Warn logs a warning message with optional formatting arguments.
 func Warn(_ context.Context, msg string, args ...any) {
 	logrus.Warnf(msg, args...)
 }
 
+// Fatal logs a fatal message with optional formatting arguments and then exits the application.
 func Fatal(_ context.Context, msg string, args ...any) {
 	logrus.Fatalf(msg, args...)
 }
