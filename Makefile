@@ -2,5 +2,8 @@
 
 .PHONY: lint
 
-lint:
+lint: fmt
 	golangci-lint run
+
+fmt: 
+	go fmt ./...
