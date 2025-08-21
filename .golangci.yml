@@ -29,9 +29,6 @@ formatters:
   settings:
     gofmt:
       simplify: true
-    goimports:
-      # optional: local-prefixes:
-      #   - github.com/yourorg/yourrepo
 
 issues:
   max-issues-per-linter: 0
