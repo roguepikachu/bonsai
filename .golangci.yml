@@ -1,0 +1,43 @@
+# GolangCI-Lint configuration file
+# See https://golangci-lint.run/usage/configuration/ for all options
+
+version: 1.55.2 # specify the version of golangci-lint config
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - gosimple
+    - unused
+    - structcheck
+    - varcheck
+    - deadcode
+    - ineffassign
+    - typecheck
+    - gofmt
+    - goimports
+    - misspell
+    - revive
+    - gocyclo
+    - dupl
+    - unparam
+    - nakedret
+    - goconst
+    - gocritic
+  disable:
+    - lll # disables line length linter
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+# Optional: customize per-directory or per-linter settings below
+# linters-settings:
+#   gocyclo:
+#     min-complexity: 15
+#   dupl:
+#     threshold: 100
