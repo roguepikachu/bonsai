@@ -5,3 +5,11 @@ type Response struct {
 	Data    interface{} `json:"data"`
 	Message string      `json:"message"`
 }
+
+func NewResponse(code int, data interface{}, message string) Response {
+	return Response{
+		Code:    code,
+		Data:    data,
+		Message: message,
+	}
+}

@@ -1,15 +1,10 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
-
-	"github.com/roguepikachu/bonsai/internal/http/handler"
+	"github.com/roguepikachu/bonsai/internal/http/router"
 )
 
 func main() {
-	// Initialize the API server
-	router := gin.Default()
-	router.GET("/ping", handler.HealthCheck)
-
+	router := router.Router()
 	router.Run("localhost:8080")
 }
