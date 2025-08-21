@@ -24,9 +24,6 @@ Bonsai is a fast, lightweight, and scalable URL shortener written in Go. It allo
 Clone the repository:
 ```sh
 git clone https://github.com/yourusername/bonsai.git
-<div align="center">
-	<img src="img/bonsai.png" alt="Bonsai logo" width="200"/>
-</div>
 ```
 Build the project:
 ```sh
