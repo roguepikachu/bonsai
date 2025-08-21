@@ -1,4 +1,4 @@
-// Package utils provides utility constants and functions for the Bonsai application.
+// Package pkg provides utility constants and functions for the Bonsai application.
 package pkg
 
 // Common API path constants.
