@@ -84,7 +84,8 @@ type CacheStatus string
 const (
 	// CacheMiss indicates a cache miss status.
 	CacheMiss CacheStatus = "MISS"
-	CacheHit  CacheStatus = "HIT"
+	// CacheHit indicates a cache hit status.
+	CacheHit CacheStatus = "HIT"
 )
 
 // SnippetMeta holds metadata about a snippet fetch.

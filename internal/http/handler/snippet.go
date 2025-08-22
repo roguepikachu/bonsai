@@ -15,12 +15,17 @@ import (
 
 const (
 	// DefaultPage is the default page number for pagination.
-	DefaultPage     = 1
-	DefaultLimit    = 20
-	MaxLimit        = 100
+	DefaultPage = 1
+	// DefaultLimit is the default number of items per page for pagination.
+	DefaultLimit = 20
+	// MaxLimit is the maximum number of items per page for pagination.
+	MaxLimit = 100
+	// MaxSnippetBytes is the maximum allowed size of a snippet in bytes.
 	MaxSnippetBytes = 10 * 1024
-	MaxExpirySecs   = 30 * 24 * 3600
-	TimeFormat      = "2006-01-02T15:04:05Z"
+	// MaxExpirySecs is the maximum expiry time for a snippet in seconds.
+	MaxExpirySecs = 30 * 24 * 3600
+	// TimeFormat is the standard format for time serialization.
+	TimeFormat = "2006-01-02T15:04:05Z"
 )
 
 // SnippetService defines the handler's dependency contract.
