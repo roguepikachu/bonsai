@@ -28,7 +28,7 @@ func NewRouter() *gin.Engine {
 	redisClient := data.NewRedisClient()
 
 	// Setup repository and service
-	repo := redisrepo.NewRedisSnippetRepository(redisClient)
+	repo := redisrepo.NewSnippetRepository(redisClient)
 	svc := service.NewService(repo)
 	snippetHandler := &handler.Handler{Svc: svc}
 	router.POST(BasePath+"/snippets", snippetHandler.Create)

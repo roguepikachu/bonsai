@@ -1,3 +1,4 @@
+// Package redis provides a Redis-backed implementation of the snippet repository.
 package redis
 
 import (
@@ -11,18 +12,18 @@ import (
 	"github.com/roguepikachu/bonsai/internal/repository"
 )
 
-// RedisSnippetRepository implements repository.SnippetRepository using Redis as backend.
-type RedisSnippetRepository struct {
+// SnippetRepository implements repository.SnippetRepository using Redis as backend.
+type SnippetRepository struct {
 	client *redis.Client
 }
 
-// NewRedisSnippetRepository creates a new RedisSnippetRepository.
-func NewRedisSnippetRepository(client *redis.Client) *RedisSnippetRepository {
-	return &RedisSnippetRepository{client: client}
+// NewSnippetRepository creates a new Redis-backed snippet repository.
+func NewSnippetRepository(client *redis.Client) *SnippetRepository {
+	return &SnippetRepository{client: client}
 }
 
 // Insert adds a new snippet to Redis.
-func (r *RedisSnippetRepository) Insert(ctx context.Context, s domain.Snippet) (string, error) {
+func (r *SnippetRepository) Insert(ctx context.Context, s domain.Snippet) (string, error) {
 	key := fmt.Sprintf("snippet:%s", s.ID)
 	data, err := json.Marshal(s)
 	if err != nil {
@@ -39,7 +40,7 @@ func (r *RedisSnippetRepository) Insert(ctx context.Context, s domain.Snippet) (
 }
 
 // FindByID retrieves a snippet by its ID from Redis.
-func (r *RedisSnippetRepository) FindByID(ctx context.Context, id string) (domain.Snippet, error) {
+func (r *SnippetRepository) FindByID(ctx context.Context, id string) (domain.Snippet, error) {
 	key := fmt.Sprintf("snippet:%s", id)
 	val, err := r.client.Get(ctx, key).Result()
 	if err != nil {
@@ -52,4 +53,4 @@ func (r *RedisSnippetRepository) FindByID(ctx context.Context, id string) (domai
 	return s, nil
 }
 
-var _ repository.SnippetRepository = (*RedisSnippetRepository)(nil)
+var _ repository.SnippetRepository = (*SnippetRepository)(nil)

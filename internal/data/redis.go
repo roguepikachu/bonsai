@@ -1,3 +1,4 @@
+// Package data provides low-level data clients and connection factories.
 package data
 
 import (
