@@ -32,6 +32,8 @@ func NewRouter() *gin.Engine {
 	svc := service.NewService(repo)
 	snippetHandler := &handler.Handler{Svc: svc}
 	router.POST(BasePath+"/snippets", snippetHandler.Create)
+	router.GET(BasePath+"/snippets", snippetHandler.List)
+	router.GET(BasePath+"/snippets/:id", snippetHandler.Get)
 
 	return router
 }

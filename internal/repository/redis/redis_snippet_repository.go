@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -51,6 +52,59 @@ func (r *SnippetRepository) FindByID(ctx context.Context, id string) (domain.Sni
 		return domain.Snippet{}, err
 	}
 	return s, nil
+}
+
+// List returns a paginated list of snippets, optionally filtered by tag.
+func (r *SnippetRepository) List(ctx context.Context, page, limit int, tag string) ([]domain.Snippet, error) {
+	var snippets []domain.Snippet
+	var cursor uint64
+	pattern := "snippet:*"
+	for {
+		keys, next, err := r.client.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return nil, err
+		}
+		for _, key := range keys {
+			val, err := r.client.Get(ctx, key).Result()
+			if err != nil {
+				continue
+			}
+			var s domain.Snippet
+			if err := json.Unmarshal([]byte(val), &s); err != nil {
+				continue
+			}
+			if tag != "" {
+				found := false
+				for _, t := range s.Tags {
+					if t == tag {
+						found = true
+						break
+					}
+				}
+				if !found {
+					continue
+				}
+			}
+			snippets = append(snippets, s)
+		}
+		if next == 0 {
+			break
+		}
+		cursor = next
+	}
+	// Sort by CreatedAt descending
+	sort.Slice(snippets, func(i, j int) bool {
+		return snippets[i].CreatedAt.After(snippets[j].CreatedAt)
+	})
+	start := (page - 1) * limit
+	if start > len(snippets) {
+		return []domain.Snippet{}, nil
+	}
+	end := start + limit
+	if end > len(snippets) {
+		end = len(snippets)
+	}
+	return snippets[start:end], nil
 }
 
 var _ repository.SnippetRepository = (*SnippetRepository)(nil)

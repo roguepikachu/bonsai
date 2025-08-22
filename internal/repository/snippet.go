@@ -11,4 +11,5 @@ import (
 type SnippetRepository interface {
 	Insert(ctx context.Context, s domain.Snippet) (string, error)
 	FindByID(ctx context.Context, id string) (domain.Snippet, error)
+	List(ctx context.Context, page, limit int, tag string) ([]domain.Snippet, error)
 }

@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +20,12 @@ func NewService(repo repository.SnippetRepository) *Service {
 type Service struct {
 	Repo repository.SnippetRepository
 }
+
+// Error variables
+var (
+	ErrSnippetNotFound = errors.New("snippet not found")
+	ErrSnippetExpired  = errors.New("snippet expired")
+)
 
 // generateID returns a new unique ID for a snippet.
 func generateID() string {
@@ -46,4 +53,22 @@ func (s *Service) CreateSnippet(ctx context.Context, content string, expiresIn i
 		return domain.Snippet{}, err
 	}
 	return snippet, nil
+}
+
+// ListSnippets returns a paginated list of snippets, optionally filtered by tag.
+func (s *Service) ListSnippets(ctx context.Context, page, limit int, tag string) ([]domain.Snippet, error) {
+	return s.Repo.List(ctx, page, limit, tag)
+}
+
+// GetSnippetByID fetches a snippet by ID, returns cache status ("HIT" or "MISS").
+func (s *Service) GetSnippetByID(ctx context.Context, id string) (domain.Snippet, string, error) {
+	// For demo, always MISS. Replace with real cache logic if needed.
+	snippet, err := s.Repo.FindByID(ctx, id)
+	if err != nil {
+		return domain.Snippet{}, "MISS", ErrSnippetNotFound
+	}
+	if !snippet.ExpiresAt.IsZero() && time.Now().UTC().After(snippet.ExpiresAt) {
+		return domain.Snippet{}, "MISS", ErrSnippetExpired
+	}
+	return snippet, "MISS", nil
 }
