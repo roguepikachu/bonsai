@@ -24,20 +24,20 @@ func NewSnippetRepository(client *redis.Client) *SnippetRepository {
 }
 
 // Insert adds a new snippet to Redis.
-func (r *SnippetRepository) Insert(ctx context.Context, s domain.Snippet) (string, error) {
+func (r *SnippetRepository) Insert(ctx context.Context, s domain.Snippet) error {
 	key := fmt.Sprintf("snippet:%s", s.ID)
 	data, err := json.Marshal(s)
 	if err != nil {
-		return "", err
+		return err
 	}
 	expiry := time.Until(s.ExpiresAt)
 	if s.ExpiresAt.IsZero() {
 		expiry = 0
 	}
 	if err := r.client.Set(ctx, key, data, expiry).Err(); err != nil {
-		return "", err
+		return err
 	}
-	return s.ID, nil
+	return nil
 }
 
 // FindByID retrieves a snippet by its ID from Redis.

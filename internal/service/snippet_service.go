@@ -13,14 +13,24 @@ import (
 	"github.com/roguepikachu/bonsai/internal/repository"
 )
 
-// NewService creates a new Service with the given SnippetRepository.
-func NewService(repo repository.SnippetRepository) *Service {
-	return &Service{Repo: repo}
+// Clock provides the current time. Allows for testable time.
+type Clock interface {
+	Now() time.Time
+}
+
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now().UTC() }
+
+// NewService creates a new Service with the given SnippetRepository and Clock.
+func NewService(repo repository.SnippetRepository, clock Clock) *Service {
+	return &Service{Repo: repo, Clock: clock}
 }
 
 // Service provides snippet-related business logic.
 type Service struct {
-	Repo repository.SnippetRepository
+	Repo  repository.SnippetRepository
+	Clock Clock
 }
 
 // Error variables
@@ -36,7 +46,7 @@ func generateID() string {
 
 // CreateSnippet creates a new snippet with content, expiry, and tags.
 func (s *Service) CreateSnippet(ctx context.Context, content string, expiresIn int, tags []string) (domain.Snippet, error) {
-	now := time.Now().UTC()
+	now := s.Clock.Now()
 	var expiresAt time.Time
 	if expiresIn > 0 {
 		expiresAt = now.Add(time.Duration(expiresIn) * time.Second)
@@ -44,14 +54,13 @@ func (s *Service) CreateSnippet(ctx context.Context, content string, expiresIn i
 		expiresAt = time.Time{} // zero value, means no expiry
 	}
 	snippet := domain.Snippet{
-		ID:        generateID(), // implement or use a UUID generator
+		ID:        generateID(),
 		Content:   content,
 		Tags:      tags,
 		CreatedAt: now,
 		ExpiresAt: expiresAt,
 	}
-	_, err := s.Repo.Insert(ctx, snippet)
-	if err != nil {
+	if err := s.Repo.Insert(ctx, snippet); err != nil {
 		return domain.Snippet{}, err
 	}
 	return snippet, nil
@@ -72,7 +81,7 @@ func (s *Service) GetSnippetByID(ctx context.Context, id string) (domain.Snippet
 		}
 		return domain.Snippet{}, "MISS", fmt.Errorf("find by id: %w", err)
 	}
-	if !snippet.ExpiresAt.IsZero() && time.Now().UTC().After(snippet.ExpiresAt) {
+	if !snippet.ExpiresAt.IsZero() && s.Clock.Now().After(snippet.ExpiresAt) {
 		return domain.Snippet{}, "MISS", fmt.Errorf("expired: %w", ErrSnippetExpired)
 	}
 	return snippet, "MISS", nil
