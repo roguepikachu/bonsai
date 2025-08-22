@@ -27,8 +27,8 @@ func main() {
 
 	// Setup repository and service
 	repo := redisrepo.NewSnippetRepository(redisClient)
-	svc := service.NewService(repo)
-	snippetHandler := &handler.Handler{Svc: svc}
+	svc := service.NewService(repo, &service.RealClock{})
+	snippetHandler := handler.NewHandler(svc)
 
 	router := router.NewRouter(snippetHandler)
 

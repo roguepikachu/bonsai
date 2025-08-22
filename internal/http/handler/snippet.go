@@ -3,6 +3,7 @@ package handler
 // Package handler provides HTTP handlers for the API endpoints.
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -20,9 +21,21 @@ const (
 	MaxExpirySecs   = 30 * 24 * 3600
 )
 
+// SnippetService defines the handler's dependency contract.
+type SnippetService interface {
+	CreateSnippet(ctx context.Context, content string, expiresIn int, tags []string) (domain.Snippet, error)
+	ListSnippets(ctx context.Context, page, limit int, tag string) ([]domain.Snippet, error)
+	GetSnippetByID(ctx context.Context, id string) (domain.Snippet, service.SnippetMeta, error)
+}
+
 // Handler handles HTTP requests for snippets.
 type Handler struct {
-	Svc *service.Service
+	svc SnippetService
+}
+
+// NewHandler constructs a Handler with the given SnippetService.
+func NewHandler(svc SnippetService) *Handler {
+	return &Handler{svc: svc}
 }
 
 // Create handles the creation of a new snippet.
@@ -42,7 +55,7 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	snippet, err := h.Svc.CreateSnippet(ctx, req.Content, req.ExpiresIn, req.Tags)
+	snippet, err := h.svc.CreateSnippet(ctx, req.Content, req.ExpiresIn, req.Tags)
 	if err != nil {
 		logger.Error(c, "failed to create snippet: %s", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -90,7 +103,7 @@ func (h *Handler) List(c *gin.Context) {
 		q.Page = DefaultPage
 	}
 	ctx := c.Request.Context()
-	items, err := h.Svc.ListSnippets(ctx, q.Page, q.Limit, q.Tag)
+	items, err := h.svc.ListSnippets(ctx, q.Page, q.Limit, q.Tag)
 	if err != nil {
 		logger.Error(c, "failed to list snippets: %s", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -126,7 +139,8 @@ func (h *Handler) Get(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	snippet, cacheStatus, err := h.Svc.GetSnippetByID(ctx, id)
+	snippet, meta, err := h.svc.GetSnippetByID(ctx, id)
+	cacheStatus := string(meta.CacheStatus)
 	if err != nil {
 		if errors.Is(err, service.ErrSnippetNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})

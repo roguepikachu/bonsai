@@ -18,19 +18,19 @@ type Clock interface {
 	Now() time.Time
 }
 
-type realClock struct{}
+type RealClock struct{}
 
-func (realClock) Now() time.Time { return time.Now().UTC() }
+func (RealClock) Now() time.Time { return time.Now().UTC() }
 
 // NewService creates a new Service with the given SnippetRepository and Clock.
 func NewService(repo repository.SnippetRepository, clock Clock) *Service {
-	return &Service{Repo: repo, Clock: clock}
+	return &Service{repo: repo, clock: clock}
 }
 
 // Service provides snippet-related business logic.
 type Service struct {
-	Repo  repository.SnippetRepository
-	Clock Clock
+	repo  repository.SnippetRepository
+	clock Clock
 }
 
 // Error variables
@@ -46,7 +46,7 @@ func generateID() string {
 
 // CreateSnippet creates a new snippet with content, expiry, and tags.
 func (s *Service) CreateSnippet(ctx context.Context, content string, expiresIn int, tags []string) (domain.Snippet, error) {
-	now := s.Clock.Now()
+	now := s.clock.Now()
 	var expiresAt time.Time
 	if expiresIn > 0 {
 		expiresAt = now.Add(time.Duration(expiresIn) * time.Second)
@@ -60,29 +60,60 @@ func (s *Service) CreateSnippet(ctx context.Context, content string, expiresIn i
 		CreatedAt: now,
 		ExpiresAt: expiresAt,
 	}
-	if err := s.Repo.Insert(ctx, snippet); err != nil {
+	if err := s.repo.Insert(ctx, snippet); err != nil {
 		return domain.Snippet{}, err
 	}
 	return snippet, nil
 }
 
 // ListSnippets returns a paginated list of snippets, optionally filtered by tag.
+const (
+	ServiceDefaultPage  = 1
+	ServiceDefaultLimit = 20
+	ServiceMaxLimit     = 100
+)
+
 func (s *Service) ListSnippets(ctx context.Context, page, limit int, tag string) ([]domain.Snippet, error) {
-	return s.Repo.List(ctx, page, limit, tag)
+	if limit > ServiceMaxLimit {
+		limit = ServiceMaxLimit
+	}
+	if limit < 1 {
+		limit = ServiceDefaultLimit
+	}
+	if page < 1 {
+		page = ServiceDefaultPage
+	}
+	return s.repo.List(ctx, page, limit, tag)
 }
 
-// GetSnippetByID fetches a snippet by ID, returns cache status ("HIT" or "MISS").
-func (s *Service) GetSnippetByID(ctx context.Context, id string) (domain.Snippet, string, error) {
+// CacheStatus is a typed cache status string.
+type CacheStatus string
+
+const (
+	CacheMiss CacheStatus = "MISS"
+	CacheHit  CacheStatus = "HIT"
+)
+
+// SnippetMeta holds metadata about a snippet fetch.
+type SnippetMeta struct {
+	CacheStatus CacheStatus
+}
+
+// GetSnippetByID fetches a snippet by ID, returns metadata.
+func (s *Service) GetSnippetByID(ctx context.Context, id string) (domain.Snippet, SnippetMeta, error) {
 	// For demo, always MISS. Replace with real cache logic if needed.
-	snippet, err := s.Repo.FindByID(ctx, id)
+	snippet, err := s.repo.FindByID(ctx, id)
+	meta := SnippetMeta{CacheStatus: CacheMiss}
 	if err != nil {
+		// Only translate not found at the service boundary
 		if errors.Is(err, redis.Nil) {
-			return domain.Snippet{}, "MISS", fmt.Errorf("not found: %w", ErrSnippetNotFound)
+			return domain.Snippet{}, meta, fmt.Errorf("%w", ErrSnippetNotFound)
 		}
-		return domain.Snippet{}, "MISS", fmt.Errorf("find by id: %w", err)
+		// All other errors are just wrapped
+		return domain.Snippet{}, meta, fmt.Errorf("find by id: %w", err)
 	}
-	if !snippet.ExpiresAt.IsZero() && s.Clock.Now().After(snippet.ExpiresAt) {
-		return domain.Snippet{}, "MISS", fmt.Errorf("expired: %w", ErrSnippetExpired)
+	if !snippet.ExpiresAt.IsZero() && s.clock.Now().After(snippet.ExpiresAt) {
+		return domain.Snippet{}, meta, fmt.Errorf("expired: %w", ErrSnippetExpired)
 	}
-	return snippet, "MISS", nil
+	return snippet, meta, nil
 }
