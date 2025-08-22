@@ -52,7 +52,19 @@ func setLogLevel(level string) {
 
 // Info logs an informational message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Info(ctx context.Context, msg string, args ...any) {
-	if reqID, ok := ctx.Value("requestId").(string); ok && reqID != "" {
+	var reqID string
+	// Support both string and struct{} context keys for requestId
+	if v := ctx.Value("requestId"); v != nil {
+		if s, ok := v.(string); ok && s != "" {
+			reqID = s
+		}
+	}
+	if v := ctx.Value(struct{} /*ctxKeyRequestID*/ {}); v != nil {
+		if s, ok := v.(string); ok && s != "" {
+			reqID = s
+		}
+	}
+	if reqID != "" {
 		logrus.WithField("requestId", reqID).Infof(msg, args...)
 	} else {
 		logrus.Infof(msg, args...)
@@ -61,7 +73,18 @@ func Info(ctx context.Context, msg string, args ...any) {
 
 // Debug logs a debug message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Debug(ctx context.Context, msg string, args ...any) {
-	if reqID, ok := ctx.Value("requestId").(string); ok && reqID != "" {
+	var reqID string
+	if v := ctx.Value("requestId"); v != nil {
+		if s, ok := v.(string); ok && s != "" {
+			reqID = s
+		}
+	}
+	if v := ctx.Value(struct{} /*ctxKeyRequestID*/ {}); v != nil {
+		if s, ok := v.(string); ok && s != "" {
+			reqID = s
+		}
+	}
+	if reqID != "" {
 		logrus.WithField("requestId", reqID).Debugf(msg, args...)
 	} else {
 		logrus.Debugf(msg, args...)
@@ -70,7 +93,18 @@ func Debug(ctx context.Context, msg string, args ...any) {
 
 // Error logs an error message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Error(ctx context.Context, msg string, args ...any) {
-	if reqID, ok := ctx.Value("requestId").(string); ok && reqID != "" {
+	var reqID string
+	if v := ctx.Value("requestId"); v != nil {
+		if s, ok := v.(string); ok && s != "" {
+			reqID = s
+		}
+	}
+	if v := ctx.Value(struct{} /*ctxKeyRequestID*/ {}); v != nil {
+		if s, ok := v.(string); ok && s != "" {
+			reqID = s
+		}
+	}
+	if reqID != "" {
 		logrus.WithField("requestId", reqID).Errorf(msg, args...)
 	} else {
 		logrus.Errorf(msg, args...)

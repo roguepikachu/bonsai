@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/roguepikachu/bonsai/internal/http/handler"
+	"github.com/roguepikachu/bonsai/internal/http/middleware"
 )
 
 const (
@@ -19,6 +20,7 @@ const (
 // NewRouter initializes and returns the main Gin engine with all routes.
 func NewRouter(snippetHandler *handler.Handler) *gin.Engine {
 	router := gin.Default()
+	router.Use(middleware.RequestIDMiddleware())
 	router.GET(BonsaiServiceHealth, handler.BonsaiHealthCheck)
 
 	router.POST(BasePath+"/snippets", snippetHandler.Create)

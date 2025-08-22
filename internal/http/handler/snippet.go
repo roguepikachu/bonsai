@@ -47,17 +47,17 @@ func NewHandler(svc SnippetService) *Handler {
 
 // Create handles the creation of a new snippet.
 func (h *Handler) Create(c *gin.Context) {
+	ctx := c.Request.Context()
 	var req domain.CreateSnippetRequestDTO
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Error(c, "failed to bind JSON: %s", err.Error())
+		logger.Error(ctx, "failed to bind JSON: %s", err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request", "details": err.Error()})
 		return
 	}
 
-	ctx := c.Request.Context()
 	snippet, err := h.svc.CreateSnippet(ctx, req.Content, req.ExpiresIn, req.Tags)
 	if err != nil {
-		logger.Error(c, "failed to create snippet: %s", err.Error())
+		logger.Error(ctx, "failed to create snippet: %s", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -79,6 +79,7 @@ func (h *Handler) Create(c *gin.Context) {
 
 // List handles listing all snippets with pagination and optional tag filter.
 func (h *Handler) List(c *gin.Context) {
+	ctx := c.Request.Context()
 	type queryParams struct {
 		Page  int    `form:"page,default=1" binding:"gte=1"`
 		Limit int    `form:"limit,default=20" binding:"gte=1,lte=100"`
@@ -86,7 +87,7 @@ func (h *Handler) List(c *gin.Context) {
 	}
 	var q queryParams
 	if err := c.ShouldBindQuery(&q); err != nil {
-		logger.Error(c, "invalid query params: %s", err.Error())
+		logger.Error(ctx, "invalid query params: %s", err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query parameters", "details": err.Error()})
 		return
 	}
@@ -100,10 +101,9 @@ func (h *Handler) List(c *gin.Context) {
 	if q.Page < 1 {
 		q.Page = DefaultPage
 	}
-	ctx := c.Request.Context()
 	items, err := h.svc.ListSnippets(ctx, q.Page, q.Limit, q.Tag)
 	if err != nil {
-		logger.Error(c, "failed to list snippets: %s", err.Error())
+		logger.Error(ctx, "failed to list snippets: %s", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -131,12 +131,12 @@ func (h *Handler) List(c *gin.Context) {
 
 // Get handles fetching a snippet by ID.
 func (h *Handler) Get(c *gin.Context) {
+	ctx := c.Request.Context()
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
 		return
 	}
-	ctx := c.Request.Context()
 	snippet, meta, err := h.svc.GetSnippetByID(ctx, id)
 	cacheStatus := string(meta.CacheStatus)
 	if err != nil {
@@ -148,7 +148,7 @@ func (h *Handler) Get(c *gin.Context) {
 			c.JSON(http.StatusGone, gin.H{"error": "expired"})
 			return
 		}
-		logger.Error(c, "failed to get snippet: %s", err.Error())
+		logger.Error(ctx, "failed to get snippet: %s", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
