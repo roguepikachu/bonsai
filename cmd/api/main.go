@@ -5,8 +5,13 @@ import (
 	"context"
 
 	"github.com/roguepikachu/bonsai/internal/config"
+	"github.com/roguepikachu/bonsai/internal/data"
+	"github.com/roguepikachu/bonsai/internal/http/handler"
 	"github.com/roguepikachu/bonsai/internal/http/router"
+	"github.com/roguepikachu/bonsai/internal/service"
 	"github.com/roguepikachu/bonsai/pkg/logger"
+
+	redisrepo "github.com/roguepikachu/bonsai/internal/repository/redis"
 )
 
 func init() {
@@ -17,7 +22,15 @@ func init() {
 func main() {
 	ctx := context.Background()
 
-	router := router.NewRouter()
+	// Setup Redis client
+	redisClient := data.NewRedisClient()
+
+	// Setup repository and service
+	repo := redisrepo.NewSnippetRepository(redisClient)
+	svc := service.NewService(repo)
+	snippetHandler := &handler.Handler{Svc: svc}
+
+	router := router.NewRouter(snippetHandler)
 
 	port := config.Conf.BonsaiPort
 	if port == "" {

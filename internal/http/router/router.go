@@ -5,10 +5,7 @@ package router
 import (
 	"github.com/gin-gonic/gin"
 
-	"github.com/roguepikachu/bonsai/internal/data"
 	"github.com/roguepikachu/bonsai/internal/http/handler"
-	redisrepo "github.com/roguepikachu/bonsai/internal/repository/redis"
-	"github.com/roguepikachu/bonsai/internal/service"
 )
 
 const (
@@ -20,17 +17,11 @@ const (
 )
 
 // NewRouter initializes and returns the main Gin engine with all routes.
-func NewRouter() *gin.Engine {
+func NewRouter(snippetHandler *handler.Handler) *gin.Engine {
 	router := gin.Default()
 	router.GET(BonsaiServiceHealth, handler.BonsaiHealthCheck)
 
-	// Setup Redis client
-	redisClient := data.NewRedisClient()
-
-	// Setup repository and service
-	repo := redisrepo.NewSnippetRepository(redisClient)
-	svc := service.NewService(repo)
-	snippetHandler := &handler.Handler{Svc: svc}
+	
 	router.POST(BasePath+"/snippets", snippetHandler.Create)
 	router.GET(BasePath+"/snippets", snippetHandler.List)
 	router.GET(BasePath+"/snippets/:id", snippetHandler.Get)

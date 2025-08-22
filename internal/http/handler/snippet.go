@@ -42,7 +42,8 @@ func (h *Handler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "expires_in must be <= 30 days"})
 		return
 	}
-	snippet, err := h.Svc.CreateSnippet(c, req.Content, req.ExpiresIn, req.Tags)
+	ctx := c.Request.Context()
+	snippet, err := h.Svc.CreateSnippet(ctx, req.Content, req.ExpiresIn, req.Tags)
 	if err != nil {
 		logger.Error(c, "failed to create snippet: %s", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -78,7 +79,8 @@ func (h *Handler) List(c *gin.Context) {
 			limit = v
 		}
 	}
-	items, err := h.Svc.ListSnippets(c, page, limit, tag)
+	ctx := c.Request.Context()
+	items, err := h.Svc.ListSnippets(ctx, page, limit, tag)
 	if err != nil {
 		logger.Error(c, "failed to list snippets: %s", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -111,7 +113,8 @@ func (h *Handler) Get(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
 		return
 	}
-	snippet, cacheStatus, err := h.Svc.GetSnippetByID(c, id)
+	ctx := c.Request.Context()
+	snippet, cacheStatus, err := h.Svc.GetSnippetByID(ctx, id)
 	if err != nil {
 		if err == service.ErrSnippetNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
