@@ -13,15 +13,6 @@ import (
 	"github.com/roguepikachu/bonsai/internal/repository"
 )
 
-// Clock provides the current time. Allows for testable time.
-type Clock interface {
-	Now() time.Time
-}
-
-type RealClock struct{}
-
-func (RealClock) Now() time.Time { return time.Now().UTC() }
-
 // NewService creates a new Service with the given SnippetRepository and Clock.
 func NewService(repo repository.SnippetRepository, clock Clock) *Service {
 	return &Service{repo: repo, clock: clock}
