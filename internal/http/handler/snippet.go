@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/roguepikachu/bonsai/internal/service"
 	"github.com/roguepikachu/bonsai/pkg/logger"
+	"github.com/roguepikachu/bonsai/internal/domain"
 )
 
 // Handler handles HTTP requests for snippets.
@@ -15,54 +16,51 @@ type Handler struct {
 	Svc *service.Service
 }
 
-// CreateSnippetRequest represents the expected request body for creating a snippet.
-type CreateSnippetRequest struct {
-	Content   string   `json:"content" binding:"required"`
-	ExpiresIn int      `json:"expires_in"`
-	Tags      []string `json:"tags"`
-}
 
 // Create handles the creation of a new snippet.
 func (h *Handler) Create(c *gin.Context) {
-	var req CreateSnippetRequest
+	var req domain.CreateSnippetRequestDTO
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(c, "failed to bind JSON: %s", err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to bind JSON"})
 		return
 	}
-	if len(req.Content) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "content is required"})
-		return
-	}
-	if len(req.Content) > 10*1024 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "content must be <= 10KB"})
-		return
-	}
-	if req.ExpiresIn > 0 && req.ExpiresIn > 30*24*3600 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "expires_in must be <= 30 days"})
-		return
-	}
-	ctx := c.Request.Context()
-	snippet, err := h.Svc.CreateSnippet(ctx, req.Content, req.ExpiresIn, req.Tags)
-	if err != nil {
-		logger.Error(c, "failed to create snippet: %s", err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-	c.JSON(http.StatusCreated, gin.H{
-		"id":         snippet.ID,
-		"created_at": snippet.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
-		"expires_at": snippet.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"),
-		"tags":       snippet.Tags,
-	})
+       if len(req.Content) == 0 {
+	       c.JSON(http.StatusBadRequest, gin.H{"error": "content is required"})
+	       return
+       }
+       if len(req.Content) > 10*1024 {
+	       c.JSON(http.StatusBadRequest, gin.H{"error": "content must be <= 10KB"})
+	       return
+       }
+       if req.ExpiresIn > 0 && req.ExpiresIn > 30*24*3600 {
+	       c.JSON(http.StatusBadRequest, gin.H{"error": "expires_in must be <= 30 days"})
+	       return
+       }
+       ctx := c.Request.Context()
+       snippet, err := h.Svc.CreateSnippet(ctx, req.Content, req.ExpiresIn, req.Tags)
+       if err != nil {
+	       logger.Error(c, "failed to create snippet: %s", err.Error())
+	       c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+	       return
+       }
+       createdAt := snippet.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
+       var expiresAt *string
+       if !snippet.ExpiresAt.IsZero() {
+	       v := snippet.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z")
+	       expiresAt = &v
+       }
+       resp := domain.SnippetResponseDTO{
+	       ID:        snippet.ID,
+	       Content:   snippet.Content,
+	       CreatedAt: createdAt,
+	       ExpiresAt: expiresAt,
+	       Tags:      snippet.Tags,
+       }
+       c.JSON(http.StatusCreated, resp)
 }
 
-// ListSnippetsResponse represents the response for listing snippets.
-type ListSnippetsResponse struct {
-	Page  int              `json:"page"`
-	Limit int              `json:"limit"`
-	Items []map[string]any `json:"items"`
-}
+// ...existing code...
 
 // List handles listing all snippets with pagination and optional tag filter.
 func (h *Handler) List(c *gin.Context) {
@@ -86,24 +84,26 @@ func (h *Handler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	resp := ListSnippetsResponse{
-		Page:  page,
-		Limit: limit,
-		Items: make([]map[string]any, 0, len(items)),
-	}
-	for _, s := range items {
-		item := map[string]any{
-			"id":         s.ID,
-			"created_at": s.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
-		}
-		if !s.ExpiresAt.IsZero() {
-			item["expires_at"] = s.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z")
-		} else {
-			item["expires_at"] = nil
-		}
-		resp.Items = append(resp.Items, item)
-	}
-	c.JSON(http.StatusOK, resp)
+       list := make([]domain.SnippetListItemDTO, 0, len(items))
+       for _, s := range items {
+	       createdAt := s.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
+	       var expiresAt *string
+	       if !s.ExpiresAt.IsZero() {
+		       v := s.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z")
+		       expiresAt = &v
+	       }
+	       list = append(list, domain.SnippetListItemDTO{
+		       ID:        s.ID,
+		       CreatedAt: createdAt,
+		       ExpiresAt: expiresAt,
+	       })
+       }
+       resp := domain.ListSnippetsResponseDTO{
+	       Page:  page,
+	       Limit: limit,
+	       Items: list,
+       }
+       c.JSON(http.StatusOK, resp)
 }
 
 // Get handles fetching a snippet by ID.
@@ -128,16 +128,19 @@ func (h *Handler) Get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	c.Header("X-Cache", cacheStatus)
-	c.JSON(http.StatusOK, gin.H{
-		"id":         snippet.ID,
-		"content":    snippet.Content,
-		"created_at": snippet.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
-		"expires_at": func() any {
-			if snippet.ExpiresAt.IsZero() {
-				return nil
-			}
-			return snippet.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z")
-		}(),
-	})
+       c.Header("X-Cache", cacheStatus)
+       createdAt := snippet.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
+       var expiresAt *string
+       if !snippet.ExpiresAt.IsZero() {
+	       v := snippet.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z")
+	       expiresAt = &v
+       }
+       resp := domain.SnippetResponseDTO{
+	       ID:        snippet.ID,
+	       Content:   snippet.Content,
+	       CreatedAt: createdAt,
+	       ExpiresAt: expiresAt,
+	       Tags:      snippet.Tags,
+       }
+       c.JSON(http.StatusOK, resp)
 }
