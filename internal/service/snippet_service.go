@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/roguepikachu/bonsai/internal/domain"
 	"github.com/roguepikachu/bonsai/internal/repository"
@@ -66,7 +67,10 @@ func (s *Service) GetSnippetByID(ctx context.Context, id string) (domain.Snippet
 	// For demo, always MISS. Replace with real cache logic if needed.
 	snippet, err := s.Repo.FindByID(ctx, id)
 	if err != nil {
-		return domain.Snippet{}, "MISS", fmt.Errorf("find by id: %w", ErrSnippetNotFound)
+		if errors.Is(err, redis.Nil) {
+			return domain.Snippet{}, "MISS", fmt.Errorf("not found: %w", ErrSnippetNotFound)
+		}
+		return domain.Snippet{}, "MISS", fmt.Errorf("find by id: %w", err)
 	}
 	if !snippet.ExpiresAt.IsZero() && time.Now().UTC().After(snippet.ExpiresAt) {
 		return domain.Snippet{}, "MISS", fmt.Errorf("expired: %w", ErrSnippetExpired)
