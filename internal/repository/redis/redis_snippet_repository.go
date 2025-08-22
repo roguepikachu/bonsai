@@ -43,15 +43,15 @@ func (r *SnippetRepository) Insert(ctx context.Context, s domain.Snippet) (strin
 // FindByID retrieves a snippet by its ID from Redis.
 func (r *SnippetRepository) FindByID(ctx context.Context, id string) (domain.Snippet, error) {
 	key := fmt.Sprintf("snippet:%s", id)
-	val, err := r.client.Get(ctx, key).Result()
-	if err != nil {
-		return domain.Snippet{}, err
-	}
-	var s domain.Snippet
-	if err := json.Unmarshal([]byte(val), &s); err != nil {
-		return domain.Snippet{}, err
-	}
-	return s, nil
+       val, err := r.client.Get(ctx, key).Result()
+       if err != nil {
+	       return domain.Snippet{}, fmt.Errorf("redis get: %w", err)
+       }
+       var s domain.Snippet
+       if err := json.Unmarshal([]byte(val), &s); err != nil {
+	       return domain.Snippet{}, fmt.Errorf("unmarshal: %w", err)
+       }
+       return s, nil
 }
 
 // List returns a paginated list of snippets, optionally filtered by tag.

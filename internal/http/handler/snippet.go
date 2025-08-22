@@ -4,6 +4,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"errors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/roguepikachu/bonsai/internal/domain"
@@ -110,19 +111,19 @@ func (h *Handler) Get(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	snippet, cacheStatus, err := h.Svc.GetSnippetByID(ctx, id)
-	if err != nil {
-		if err == service.ErrSnippetNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-			return
-		}
-		if err == service.ErrSnippetExpired {
-			c.JSON(http.StatusGone, gin.H{"error": "expired"})
-			return
-		}
-		logger.Error(c, "failed to get snippet: %s", err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
+       if err != nil {
+	       if errors.Is(err, service.ErrSnippetNotFound) {
+		       c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		       return
+	       }
+	       if errors.Is(err, service.ErrSnippetExpired) {
+		       c.JSON(http.StatusGone, gin.H{"error": "expired"})
+		       return
+	       }
+	       logger.Error(c, "failed to get snippet: %s", err.Error())
+	       c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+	       return
+       }
 	c.Header("X-Cache", cacheStatus)
 	createdAt := snippet.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
 	var expiresAt *string
