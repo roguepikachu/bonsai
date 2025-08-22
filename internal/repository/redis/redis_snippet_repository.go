@@ -13,6 +13,11 @@ import (
 	"github.com/roguepikachu/bonsai/internal/repository"
 )
 
+// keyForSnippet returns the Redis key for a snippet ID.
+func keyForSnippet(id string) string {
+	return fmt.Sprintf("snippet:%s", id)
+}
+
 // SnippetRepository implements repository.SnippetRepository using Redis as backend.
 type SnippetRepository struct {
 	client *redis.Client
@@ -25,13 +30,13 @@ func NewSnippetRepository(client *redis.Client) *SnippetRepository {
 
 // Insert adds a new snippet to Redis.
 func (r *SnippetRepository) Insert(ctx context.Context, s domain.Snippet) error {
-	key := fmt.Sprintf("snippet:%s", s.ID)
+	key := keyForSnippet(s.ID)
 	data, err := json.Marshal(s)
 	if err != nil {
 		return err
 	}
 	expiry := time.Until(s.ExpiresAt)
-	if s.ExpiresAt.IsZero() {
+	if s.ExpiresAt.IsZero() || expiry <= 0 {
 		expiry = 0
 	}
 	if err := r.client.Set(ctx, key, data, expiry).Err(); err != nil {
@@ -42,9 +47,12 @@ func (r *SnippetRepository) Insert(ctx context.Context, s domain.Snippet) error 
 
 // FindByID retrieves a snippet by its ID from Redis.
 func (r *SnippetRepository) FindByID(ctx context.Context, id string) (domain.Snippet, error) {
-	key := fmt.Sprintf("snippet:%s", id)
+	key := keyForSnippet(id)
 	val, err := r.client.Get(ctx, key).Result()
 	if err != nil {
+		if err == redis.Nil {
+			return domain.Snippet{}, repository.ErrNotFound
+		}
 		return domain.Snippet{}, fmt.Errorf("redis get: %w", err)
 	}
 	var s domain.Snippet
@@ -58,7 +66,7 @@ func (r *SnippetRepository) FindByID(ctx context.Context, id string) (domain.Sni
 func (r *SnippetRepository) List(ctx context.Context, page, limit int, tag string) ([]domain.Snippet, error) {
 	var snippets []domain.Snippet
 	var cursor uint64
-	pattern := "snippet:*"
+	pattern := keyForSnippet("*")
 	for {
 		keys, next, err := r.client.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
@@ -105,6 +113,11 @@ func (r *SnippetRepository) List(ctx context.Context, page, limit int, tag strin
 		end = len(snippets)
 	}
 	return snippets[start:end], nil
+}
+
+// Close closes the Redis client connection if owned by this repository.
+func (r *SnippetRepository) Close() error {
+	return r.client.Close()
 }
 
 var _ repository.SnippetRepository = (*SnippetRepository)(nil)

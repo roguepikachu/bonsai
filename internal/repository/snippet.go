@@ -3,9 +3,13 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"github.com/roguepikachu/bonsai/internal/domain"
 )
+
+// ErrNotFound is returned when a requested entity is not found in the repository.
+var ErrNotFound = errors.New("not found")
 
 // SnippetRepository defines methods for snippet data access.
 type SnippetRepository interface {
