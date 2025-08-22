@@ -9,6 +9,11 @@ import (
 	"github.com/roguepikachu/bonsai/pkg/logger"
 )
 
+func init() {
+	logger.InitLogging()
+	config.InitConf()
+}
+
 func main() {
 	ctx := context.Background()
 
