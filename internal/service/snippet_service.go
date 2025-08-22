@@ -64,12 +64,12 @@ func (s *Service) ListSnippets(ctx context.Context, page, limit int, tag string)
 // GetSnippetByID fetches a snippet by ID, returns cache status ("HIT" or "MISS").
 func (s *Service) GetSnippetByID(ctx context.Context, id string) (domain.Snippet, string, error) {
 	// For demo, always MISS. Replace with real cache logic if needed.
-       snippet, err := s.Repo.FindByID(ctx, id)
-       if err != nil {
-	       return domain.Snippet{}, "MISS", fmt.Errorf("find by id: %w", ErrSnippetNotFound)
-       }
-       if !snippet.ExpiresAt.IsZero() && time.Now().UTC().After(snippet.ExpiresAt) {
-	       return domain.Snippet{}, "MISS", fmt.Errorf("expired: %w", ErrSnippetExpired)
-       }
-       return snippet, "MISS", nil
+	snippet, err := s.Repo.FindByID(ctx, id)
+	if err != nil {
+		return domain.Snippet{}, "MISS", fmt.Errorf("find by id: %w", ErrSnippetNotFound)
+	}
+	if !snippet.ExpiresAt.IsZero() && time.Now().UTC().After(snippet.ExpiresAt) {
+		return domain.Snippet{}, "MISS", fmt.Errorf("expired: %w", ErrSnippetExpired)
+	}
+	return snippet, "MISS", nil
 }

@@ -1,15 +1,23 @@
-// Package handler provides HTTP handlers for the API endpoints.
 package handler
 
+// Package handler provides HTTP handlers for the API endpoints.
+
 import (
-	"net/http"
-	"strconv"
 	"errors"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/roguepikachu/bonsai/internal/domain"
 	"github.com/roguepikachu/bonsai/internal/service"
 	"github.com/roguepikachu/bonsai/pkg/logger"
+)
+
+const (
+	DefaultPage     = 1
+	DefaultLimit    = 20
+	MaxLimit        = 100
+	MaxSnippetBytes = 10 * 1024
+	MaxExpirySecs   = 30 * 24 * 3600
 )
 
 // Handler handles HTTP requests for snippets.
@@ -60,21 +68,29 @@ func (h *Handler) Create(c *gin.Context) {
 
 // List handles listing all snippets with pagination and optional tag filter.
 func (h *Handler) List(c *gin.Context) {
-	page := 1
-	limit := 20
-	tag := c.Query("tag")
-	if p := c.Query("page"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil && v > 0 {
-			page = v
-		}
+	type queryParams struct {
+		Page  int    `form:"page,default=1" binding:"gte=1"`
+		Limit int    `form:"limit,default=20" binding:"gte=1,lte=100"`
+		Tag   string `form:"tag"`
 	}
-	if l := c.Query("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 {
-			limit = v
-		}
+	var q queryParams
+	if err := c.ShouldBindQuery(&q); err != nil {
+		logger.Error(c, "invalid query params: %s", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query parameters", "details": err.Error()})
+		return
+	}
+	// Cap pagination
+	if q.Limit > MaxLimit {
+		q.Limit = MaxLimit
+	}
+	if q.Limit < 1 {
+		q.Limit = DefaultLimit
+	}
+	if q.Page < 1 {
+		q.Page = DefaultPage
 	}
 	ctx := c.Request.Context()
-	items, err := h.Svc.ListSnippets(ctx, page, limit, tag)
+	items, err := h.Svc.ListSnippets(ctx, q.Page, q.Limit, q.Tag)
 	if err != nil {
 		logger.Error(c, "failed to list snippets: %s", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -95,8 +111,8 @@ func (h *Handler) List(c *gin.Context) {
 		})
 	}
 	resp := domain.ListSnippetsResponseDTO{
-		Page:  page,
-		Limit: limit,
+		Page:  q.Page,
+		Limit: q.Limit,
 		Items: list,
 	}
 	c.JSON(http.StatusOK, resp)
@@ -111,19 +127,19 @@ func (h *Handler) Get(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	snippet, cacheStatus, err := h.Svc.GetSnippetByID(ctx, id)
-       if err != nil {
-	       if errors.Is(err, service.ErrSnippetNotFound) {
-		       c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-		       return
-	       }
-	       if errors.Is(err, service.ErrSnippetExpired) {
-		       c.JSON(http.StatusGone, gin.H{"error": "expired"})
-		       return
-	       }
-	       logger.Error(c, "failed to get snippet: %s", err.Error())
-	       c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-	       return
-       }
+	if err != nil {
+		if errors.Is(err, service.ErrSnippetNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if errors.Is(err, service.ErrSnippetExpired) {
+			c.JSON(http.StatusGone, gin.H{"error": "expired"})
+			return
+		}
+		logger.Error(c, "failed to get snippet: %s", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
 	c.Header("X-Cache", cacheStatus)
 	createdAt := snippet.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
 	var expiresAt *string
