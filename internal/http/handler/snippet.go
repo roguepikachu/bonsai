@@ -19,6 +19,7 @@ const (
 	MaxLimit        = 100
 	MaxSnippetBytes = 10 * 1024
 	MaxExpirySecs   = 30 * 24 * 3600
+	TimeFormat      = "2006-01-02T15:04:05Z"
 )
 
 // SnippetService defines the handler's dependency contract.
@@ -47,13 +48,6 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	// Use validator for all rules
-	if err := c.ShouldBind(&req); err != nil {
-		logger.Error(c, "validation failed: %s", err.Error())
-		c.JSON(http.StatusBadRequest, gin.H{"error": "validation failed", "details": err.Error()})
-		return
-	}
-
 	ctx := c.Request.Context()
 	snippet, err := h.svc.CreateSnippet(ctx, req.Content, req.ExpiresIn, req.Tags)
 	if err != nil {
@@ -61,10 +55,10 @@ func (h *Handler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	createdAt := snippet.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
+	createdAt := snippet.CreatedAt.UTC().Format(TimeFormat)
 	var expiresAt *string
 	if !snippet.ExpiresAt.IsZero() {
-		v := snippet.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z")
+		v := snippet.ExpiresAt.UTC().Format(TimeFormat)
 		expiresAt = &v
 	}
 	resp := domain.SnippetResponseDTO{
@@ -76,8 +70,6 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 	c.JSON(http.StatusCreated, resp)
 }
-
-// ...existing code...
 
 // List handles listing all snippets with pagination and optional tag filter.
 func (h *Handler) List(c *gin.Context) {
@@ -111,10 +103,10 @@ func (h *Handler) List(c *gin.Context) {
 	}
 	list := make([]domain.SnippetListItemDTO, 0, len(items))
 	for _, s := range items {
-		createdAt := s.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
+		createdAt := s.CreatedAt.UTC().Format(TimeFormat)
 		var expiresAt *string
 		if !s.ExpiresAt.IsZero() {
-			v := s.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z")
+			v := s.ExpiresAt.UTC().Format(TimeFormat)
 			expiresAt = &v
 		}
 		list = append(list, domain.SnippetListItemDTO{
@@ -155,10 +147,10 @@ func (h *Handler) Get(c *gin.Context) {
 		return
 	}
 	c.Header("X-Cache", cacheStatus)
-	createdAt := snippet.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
+	createdAt := snippet.CreatedAt.UTC().Format(TimeFormat)
 	var expiresAt *string
 	if !snippet.ExpiresAt.IsZero() {
-		v := snippet.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z")
+		v := snippet.ExpiresAt.UTC().Format(TimeFormat)
 		expiresAt = &v
 	}
 	resp := domain.SnippetResponseDTO{
