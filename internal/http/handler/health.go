@@ -9,8 +9,8 @@ import (
 	"github.com/roguepikachu/bonsai/pkg"
 )
 
-// HealthCheck handles the /ping endpoint for health checks.
-func HealthCheck(c *gin.Context) {
+// BonsaiHealthCheck handles the /ping endpoint for health checks.
+func BonsaiHealthCheck(c *gin.Context) {
 	response := pkg.NewResponse(http.StatusOK, nil, "pong")
 	c.JSON(response.Code, response)
 }

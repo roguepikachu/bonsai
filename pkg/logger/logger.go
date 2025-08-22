@@ -52,8 +52,8 @@ func setLogLevel(level string) {
 
 // Info logs an informational message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Info(ctx context.Context, msg string, args ...any) {
-	if reqID, ok := ctx.Value("request_id").(string); ok && reqID != "" {
-		logrus.WithField("request_id", reqID).Infof(msg, args...)
+	if reqID, ok := ctx.Value("requestId").(string); ok && reqID != "" {
+		logrus.WithField("requestId", reqID).Infof(msg, args...)
 	} else {
 		logrus.Infof(msg, args...)
 	}
@@ -61,8 +61,8 @@ func Info(ctx context.Context, msg string, args ...any) {
 
 // Debug logs a debug message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Debug(ctx context.Context, msg string, args ...any) {
-	if reqID, ok := ctx.Value("request_id").(string); ok && reqID != "" {
-		logrus.WithField("request_id", reqID).Debugf(msg, args...)
+	if reqID, ok := ctx.Value("requestId").(string); ok && reqID != "" {
+		logrus.WithField("requestId", reqID).Debugf(msg, args...)
 	} else {
 		logrus.Debugf(msg, args...)
 	}
@@ -70,8 +70,8 @@ func Debug(ctx context.Context, msg string, args ...any) {
 
 // Error logs an error message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Error(ctx context.Context, msg string, args ...any) {
-	if reqID, ok := ctx.Value("request_id").(string); ok && reqID != "" {
-		logrus.WithField("request_id", reqID).Errorf(msg, args...)
+	if reqID, ok := ctx.Value("requestId").(string); ok && reqID != "" {
+		logrus.WithField("requestId", reqID).Errorf(msg, args...)
 	} else {
 		logrus.Errorf(msg, args...)
 	}
@@ -79,8 +79,8 @@ func Error(ctx context.Context, msg string, args ...any) {
 
 // Trace logs a trace message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Trace(ctx context.Context, msg string, args ...any) {
-	if reqID, ok := ctx.Value("request_id").(string); ok && reqID != "" {
-		logrus.WithField("request_id", reqID).Tracef(msg, args...)
+	if reqID, ok := ctx.Value("requestId").(string); ok && reqID != "" {
+		logrus.WithField("requestId", reqID).Tracef(msg, args...)
 	} else {
 		logrus.Tracef(msg, args...)
 	}
@@ -88,8 +88,8 @@ func Trace(ctx context.Context, msg string, args ...any) {
 
 // Warn logs a warning message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Warn(ctx context.Context, msg string, args ...any) {
-	if reqID, ok := ctx.Value("request_id").(string); ok && reqID != "" {
-		logrus.WithField("request_id", reqID).Warnf(msg, args...)
+	if reqID, ok := ctx.Value("requestId").(string); ok && reqID != "" {
+		logrus.WithField("requestId", reqID).Warnf(msg, args...)
 	} else {
 		logrus.Warnf(msg, args...)
 	}
@@ -97,8 +97,8 @@ func Warn(ctx context.Context, msg string, args ...any) {
 
 // Fatal logs a fatal message with optional formatting arguments and then exits the application. If a request ID is present in the context, it is included in the log.
 func Fatal(ctx context.Context, msg string, args ...any) {
-	if reqID, ok := ctx.Value("request_id").(string); ok && reqID != "" {
-		logrus.WithField("request_id", reqID).Fatalf(msg, args...)
+	if reqID, ok := ctx.Value("requestId").(string); ok && reqID != "" {
+		logrus.WithField("requestId", reqID).Fatalf(msg, args...)
 	} else {
 		logrus.Fatalf(msg, args...)
 	}

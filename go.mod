@@ -3,7 +3,9 @@ module github.com/roguepikachu/bonsai
 go 1.23.10
 
 require (
+	github.com/caarlos0/env v3.5.0+incompatible
 	github.com/gin-gonic/gin v1.10.1
+	github.com/joho/godotenv v1.5.1
 	github.com/sirupsen/logrus v1.9.3
 )
 

@@ -4,14 +4,24 @@ package main
 import (
 	"context"
 
+	"github.com/roguepikachu/bonsai/internal/config"
 	"github.com/roguepikachu/bonsai/internal/http/router"
 	"github.com/roguepikachu/bonsai/pkg/logger"
 )
 
 func main() {
-	router := router.Router()
-	err := router.Run(":8080")
+	ctx := context.Background()
+
+	router := router.NewRouter()
+
+	port := config.Conf.BonsaiPort
+	if port == "" {
+		logger.Info(ctx, "no port configured, falling back to default: 8080")
+		port = "8080"
+	}
+
+	err := router.Run(":" + port)
 	if err != nil {
-		logger.Fatal(context.Background(), "Failed to start server: %v", err)
+		logger.Fatal(ctx, "failed to start server: %v", err)
 	}
 }
