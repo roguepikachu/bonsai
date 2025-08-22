@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	// DefaultPage is the default page number for pagination.
 	DefaultPage     = 1
 	DefaultLimit    = 20
 	MaxLimit        = 100

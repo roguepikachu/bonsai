@@ -21,7 +21,6 @@ func NewRouter(snippetHandler *handler.Handler) *gin.Engine {
 	router := gin.Default()
 	router.GET(BonsaiServiceHealth, handler.BonsaiHealthCheck)
 
-	
 	router.POST(BasePath+"/snippets", snippetHandler.Create)
 	router.GET(BasePath+"/snippets", snippetHandler.List)
 	router.GET(BasePath+"/snippets/:id", snippetHandler.Get)

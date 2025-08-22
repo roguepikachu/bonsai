@@ -64,6 +64,7 @@ const (
 	ServiceMaxLimit     = 100
 )
 
+// ListSnippets returns a list of snippets with pagination and optional tag filtering.
 func (s *Service) ListSnippets(ctx context.Context, page, limit int, tag string) ([]domain.Snippet, error) {
 	if limit > ServiceMaxLimit {
 		limit = ServiceMaxLimit
@@ -81,6 +82,7 @@ func (s *Service) ListSnippets(ctx context.Context, page, limit int, tag string)
 type CacheStatus string
 
 const (
+	// CacheMiss indicates a cache miss status.
 	CacheMiss CacheStatus = "MISS"
 	CacheHit  CacheStatus = "HIT"
 )
