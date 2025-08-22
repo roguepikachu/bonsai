@@ -8,32 +8,32 @@ import (
 
 // CreateSnippetRequestDTO represents the expected request body for creating a snippet.
 type CreateSnippetRequestDTO struct {
-	Content   string   `json:"content" binding:"required"`
-	ExpiresIn int      `json:"expires_in"`
+	Content   string   `json:"content" binding:"required,max=10240"`
+	ExpiresIn int      `json:"expires_in" binding:"omitempty,gte=0,lte=2592000"`
 	Tags      []string `json:"tags"`
 }
 
 // SnippetResponseDTO represents the response for a single snippet.
 type SnippetResponseDTO struct {
-	ID        string     `json:"id"`
-	Content   string     `json:"content"`
-	CreatedAt string     `json:"created_at"`
-	ExpiresAt *string    `json:"expires_at,omitempty"`
-	Tags      []string   `json:"tags,omitempty"`
+	ID        string   `json:"id"`
+	Content   string   `json:"content"`
+	CreatedAt string   `json:"created_at"`
+	ExpiresAt *string  `json:"expires_at,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
 }
 
 // ListSnippetsResponseDTO represents the response for listing snippets.
 type ListSnippetsResponseDTO struct {
-	Page  int                   `json:"page"`
-	Limit int                   `json:"limit"`
-	Items []SnippetListItemDTO  `json:"items"`
+	Page  int                  `json:"page"`
+	Limit int                  `json:"limit"`
+	Items []SnippetListItemDTO `json:"items"`
 }
 
 // SnippetListItemDTO represents a snippet in a list response.
 type SnippetListItemDTO struct {
-	ID        string   `json:"id"`
-	CreatedAt string   `json:"created_at"`
-	ExpiresAt *string  `json:"expires_at,omitempty"`
+	ID        string  `json:"id"`
+	CreatedAt string  `json:"created_at"`
+	ExpiresAt *string `json:"expires_at,omitempty"`
 }
 
 // Snippet represents a code snippet entity.
