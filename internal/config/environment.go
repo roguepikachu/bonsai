@@ -15,6 +15,8 @@ import (
 type Config struct {
 	// BonsaiPort is the port on which the Bonsai server runs.
 	BonsaiPort string `env:"BONSAI_PORT"`
+	// RedisPort is the port on which the Redis server runs.
+	RedisPort string `env:"REDIS_PORT"`
 }
 
 // Conf holds the global configuration for the Bonsai application.
