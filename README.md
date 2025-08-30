@@ -41,6 +41,41 @@ Bonsai is a fast, lightweight, and scalable snippet store written in Go. It lets
   - Readiness: http://localhost:8080/v1/readyz
   - Legacy: http://localhost:8080/v1/health
 
+### Run everything with one command
+
+If you want DBs and API together in one go:
+
+```sh
+make up
+```
+
+Stop services:
+
+```sh
+make down
+```
+
+### Docker image build
+
+Build the API Docker image (customizable name and tag):
+
+```sh
+make bonsai-image           # builds bonsai:latest
+make IMAGE=myorg/bonsai TAG=v1.2.3 bonsai-image
+```
+
+Aliases:
+
+```sh
+make image
+make docker-image
+make docker-build
+```
+
+### Make commands
+
+Run `make help` to see all available commands and descriptions. The Makefile is the source of truth for command docs.
+
 ## Documentation
 See the [docs/](docs/) folder for detailed API documentation, architecture, and contribution guidelines.
 
