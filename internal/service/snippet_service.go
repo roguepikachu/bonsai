@@ -14,13 +14,14 @@ import (
 
 // NewService creates a new Service with the given SnippetRepository and Clock.
 func NewService(repo repository.SnippetRepository, clock Clock) *Service {
-	return &Service{repo: repo, clock: clock}
+	return NewServiceWithOptions(repo, clock)
 }
 
 // Service provides snippet-related business logic.
 type Service struct {
 	repo  repository.SnippetRepository
 	clock Clock
+	idGen func() string
 }
 
 // Error variables
@@ -28,6 +29,21 @@ var (
 	ErrSnippetNotFound = errors.New("snippet not found")
 	ErrSnippetExpired  = errors.New("snippet expired")
 )
+
+// Option configures Service.
+type Option func(*Service)
+
+// WithIDGenerator overrides the snippet ID generator.
+func WithIDGenerator(f func() string) Option { return func(s *Service) { s.idGen = f } }
+
+// NewServiceWithOptions creates a Service with additional options for testability.
+func NewServiceWithOptions(repo repository.SnippetRepository, clock Clock, opts ...Option) *Service {
+	s := &Service{repo: repo, clock: clock, idGen: generateID}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
 
 // generateID returns a new unique ID for a snippet.
 func generateID() string {
@@ -43,8 +59,12 @@ func (s *Service) CreateSnippet(ctx context.Context, content string, expiresIn i
 	} else {
 		expiresAt = time.Time{} // zero value, means no expiry
 	}
+	gen := s.idGen
+	if gen == nil {
+		gen = generateID
+	}
 	snippet := domain.Snippet{
-		ID:        generateID(),
+		ID:        gen(),
 		Content:   content,
 		Tags:      tags,
 		CreatedAt: now,

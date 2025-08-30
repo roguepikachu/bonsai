@@ -1,4 +1,4 @@
-// Package ctxutil provides helpers for storing and retrieving values in context.
+// Package utils provides helpers for storing and retrieving values in context.
 package utils
 
 import "context"

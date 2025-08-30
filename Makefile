@@ -7,6 +7,15 @@ lint: fmt
 fmt: 
 	go fmt ./...
 
+.PHONY: test test-unit test-integration
+test: test-unit
+
+test-unit:
+	go test ./...
+
+test-integration:
+	go test -tags=integration ./...
+
 .PHONY: redis-up redis-down redis-logs redis-restart postgres-up postgres-down postgres-logs postgres-restart dev-up dev-down
 
 redis-up:
