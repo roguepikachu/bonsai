@@ -49,6 +49,7 @@ func (h *Handler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"code": "internal_error", "message": "internal server error"}})
 		return
 	}
+	logger.With(ctx, map[string]any{"id": snippet.ID, "tags": snippet.Tags}).Info("snippet created")
 	createdAt := snippet.CreatedAt.UTC().Format(TimeFormat)
 	var expiresAt *string
 	if !snippet.ExpiresAt.IsZero() {
@@ -95,6 +96,7 @@ func (h *Handler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"code": "internal_error", "message": "internal server error"}})
 		return
 	}
+	logger.With(ctx, map[string]any{"count": len(items), "page": q.Page, "limit": q.Limit, "tag": q.Tag}).Debug("snippets listed")
 	list := make([]domain.SnippetListItemDTO, 0, len(items))
 	for _, s := range items {
 		createdAt := s.CreatedAt.UTC().Format(TimeFormat)
@@ -140,6 +142,7 @@ func (h *Handler) Get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"code": "internal_error", "message": "internal server error"}})
 		return
 	}
+	logger.With(ctx, map[string]any{"id": id, "cache": cacheStatus}).Debug("snippet retrieved")
 	c.Header("X-Cache", cacheStatus)
 	createdAt := snippet.CreatedAt.UTC().Format(TimeFormat)
 	var expiresAt *string

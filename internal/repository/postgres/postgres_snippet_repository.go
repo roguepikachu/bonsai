@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/roguepikachu/bonsai/internal/domain"
 	"github.com/roguepikachu/bonsai/internal/repository"
+	"github.com/roguepikachu/bonsai/pkg/logger"
 )
 
 // SnippetRepository implements repository.SnippetRepository using Postgres.
@@ -40,7 +41,11 @@ CREATE INDEX IF NOT EXISTS idx_snippets_expires_at ON snippets (expires_at);
 CREATE INDEX IF NOT EXISTS idx_snippets_tags_gin ON snippets USING GIN (tags);
 `
 	_, err := r.pool.Exec(ctx, schema)
-	return err
+	if err != nil {
+		return err
+	}
+	logger.Info(ctx, "postgres schema ensured")
+	return nil
 }
 
 // Insert adds a new snippet to Postgres.

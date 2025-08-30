@@ -71,7 +71,7 @@ func main() {
 
 	// Start server in background
 	go func() {
-		logger.Info(ctx, "starting server on :%s", port)
+		logger.WithField(ctx, "addr", ":"+port).Info("starting server")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal(ctx, "server error: %v", err)
 		}
@@ -81,14 +81,14 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
-	logger.Info(ctx, "shutdown signal received, shutting down...")
+	logger.WithField(ctx, "signal", "interrupt").Info("shutdown signal received")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error(ctx, "graceful shutdown failed: %v", err)
+		logger.WithField(ctx, "error", err.Error()).Error("graceful shutdown failed")
 		if cerr := srv.Close(); cerr != nil {
-			logger.Error(ctx, "server close failed: %v", cerr)
+			logger.WithField(ctx, "error", cerr.Error()).Error("server close failed")
 		}
 	}
 	logger.Info(ctx, "server stopped cleanly")

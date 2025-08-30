@@ -12,6 +12,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/roguepikachu/bonsai/internal/domain"
 	"github.com/roguepikachu/bonsai/internal/repository"
+	"github.com/roguepikachu/bonsai/pkg/logger"
 )
 
 // key helpers
@@ -48,9 +49,15 @@ func (r *SnippetRepository) Insert(ctx context.Context, s domain.Snippet) error 
 			exp = until
 		}
 	}
-	_ = r.redis.Set(ctx, keySnippet(s.ID), data, exp).Err()
+	if err := r.redis.Set(ctx, keySnippet(s.ID), data, exp).Err(); err != nil {
+		logger.With(ctx, map[string]any{"id": s.ID, "ttl": exp.String()}).Warn("failed to set snippet in cache")
+	} else {
+		logger.With(ctx, map[string]any{"id": s.ID, "ttl": exp.String()}).Debug("cached snippet after insert")
+	}
 	// bust list caches best-effort
-	_ = r.invalidateListKeys(ctx)
+	if err := r.invalidateListKeys(ctx); err != nil {
+		logger.With(ctx, map[string]any{"error": err.Error()}).Warn("failed to invalidate list cache keys")
+	}
 	return nil
 }
 
@@ -60,9 +67,11 @@ func (r *SnippetRepository) FindByID(ctx context.Context, id string) (domain.Sni
 	if err == nil && val != "" {
 		var s domain.Snippet
 		if jsonErr := json.Unmarshal([]byte(val), &s); jsonErr == nil {
+			logger.WithField(ctx, "id", id).Debug("cache hit: snippet")
 			return s, nil
 		}
 	}
+	logger.WithField(ctx, "id", id).Debug("cache miss: snippet")
 	s, err := r.primary.FindByID(ctx, id)
 	if err != nil {
 		return domain.Snippet{}, err
@@ -74,7 +83,9 @@ func (r *SnippetRepository) FindByID(ctx context.Context, id string) (domain.Sni
 			exp = until
 		}
 	}
-	_ = r.redis.Set(ctx, keySnippet(s.ID), data, exp).Err()
+	if err := r.redis.Set(ctx, keySnippet(s.ID), data, exp).Err(); err != nil {
+		logger.With(ctx, map[string]any{"id": s.ID, "ttl": exp.String()}).Warn("failed to set snippet in cache")
+	}
 	return s, nil
 }
 
@@ -84,9 +95,11 @@ func (r *SnippetRepository) List(ctx context.Context, page, limit int, tag strin
 	if val, err := r.redis.Get(ctx, k).Result(); err == nil && val != "" {
 		var items []domain.Snippet
 		if jsonErr := json.Unmarshal([]byte(val), &items); jsonErr == nil {
+			logger.With(ctx, map[string]any{"key": k}).Debug("cache hit: list")
 			return items, nil
 		}
 	}
+	logger.With(ctx, map[string]any{"key": k}).Debug("cache miss: list")
 	items, err := r.primary.List(ctx, page, limit, tag)
 	if err != nil {
 		return nil, err
@@ -102,7 +115,9 @@ func (r *SnippetRepository) List(ctx context.Context, page, limit int, tag strin
 	// ensure order by CreatedAt desc (primary should already do this)
 	sort.SliceStable(filtered, func(i, j int) bool { return filtered[i].CreatedAt.After(filtered[j].CreatedAt) })
 	data, _ := json.Marshal(filtered)
-	_ = r.redis.Set(ctx, k, data, r.ttl).Err()
+	if err := r.redis.Set(ctx, k, data, r.ttl).Err(); err != nil {
+		logger.With(ctx, map[string]any{"key": k, "ttl": r.ttl.String()}).Warn("failed to set list in cache")
+	}
 	return filtered, nil
 }
 
@@ -123,7 +138,11 @@ func (r *SnippetRepository) invalidateListKeys(ctx context.Context) error {
 				}
 			}
 			if len(listKeys) > 0 {
-				_ = r.redis.Del(ctx, listKeys...).Err()
+				if err := r.redis.Del(ctx, listKeys...).Err(); err != nil {
+					logger.With(ctx, map[string]any{"keys": listKeys, "error": err.Error()}).Warn("failed to delete list cache keys")
+				} else {
+					logger.With(ctx, map[string]any{"keys": listKeys}).Debug("invalidated list cache keys")
+				}
 			}
 		}
 		if next == 0 {

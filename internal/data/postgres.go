@@ -8,11 +8,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/roguepikachu/bonsai/internal/config"
+	"github.com/roguepikachu/bonsai/pkg/logger"
 )
 
 // NewPostgresPool creates a new pgx connection pool based on environment configuration.
 func NewPostgresPool(ctx context.Context) (*pgxpool.Pool, error) {
 	if dsn := config.Conf.PostgresURL; dsn != "" {
+		logger.Info(ctx, "initializing postgres pool via DSN (host masked)")
 		cfg, err := pgxpool.ParseConfig(dsn)
 		if err != nil {
 			return nil, err
@@ -42,6 +44,7 @@ func NewPostgresPool(ctx context.Context) (*pgxpool.Pool, error) {
 	if sslmode == "" {
 		sslmode = "disable"
 	}
+	logger.With(ctx, map[string]any{"host": host, "port": port, "db": db, "sslmode": sslmode}).Info("initializing postgres pool")
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s", user, pass, host, port, db, sslmode)
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {

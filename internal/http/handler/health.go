@@ -99,6 +99,6 @@ func (h *HealthHandler) Readiness(c *gin.Context) {
 		c.JSON(http.StatusOK, pkg.NewResponse(http.StatusOK, gin.H{"ready": true, "checks": results}, "ready"))
 		return
 	}
-	logger.Warn(c.Request.Context(), "readiness failed: %+v", results)
+	logger.WithField(c.Request.Context(), "checks", results).Warn("readiness failed")
 	c.JSON(http.StatusServiceUnavailable, pkg.NewResponse(http.StatusServiceUnavailable, gin.H{"ready": false, "checks": results}, "not ready"))
 }

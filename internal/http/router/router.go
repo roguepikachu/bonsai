@@ -22,8 +22,11 @@ const (
 
 // NewRouter initializes and returns the main Gin engine with all routes.
 func NewRouter(snippetHandler *handler.Handler, healthHandler *handler.HealthHandler) *gin.Engine {
-	router := gin.Default()
+	router := gin.New()
+	// Middlewares: request id, request logging, panic recovery
 	router.Use(middleware.RequestIDMiddleware())
+	router.Use(middleware.RequestLogger())
+	router.Use(middleware.Recovery())
 	// Legacy health
 	router.GET(HealthPath, handler.Health)
 	// Kubernetes-style probes
