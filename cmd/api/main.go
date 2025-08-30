@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"time"
 
 	"github.com/roguepikachu/bonsai/internal/config"
 	"github.com/roguepikachu/bonsai/internal/data"
@@ -11,7 +12,8 @@ import (
 	"github.com/roguepikachu/bonsai/internal/service"
 	"github.com/roguepikachu/bonsai/pkg/logger"
 
-	redisrepo "github.com/roguepikachu/bonsai/internal/repository/redis"
+	cachedrepo "github.com/roguepikachu/bonsai/internal/repository/cached"
+	pgrepo "github.com/roguepikachu/bonsai/internal/repository/postgres"
 )
 
 func init() {
@@ -24,9 +26,24 @@ func main() {
 
 	// Setup Redis client
 	redisClient := data.NewRedisClient()
+	defer redisClient.Close()
 
-	// Setup repository and service
-	repo := redisrepo.NewSnippetRepository(redisClient)
+	// Setup Postgres pool
+	pgPool, err := data.NewPostgresPool(ctx)
+	if err != nil {
+		logger.Fatal(ctx, "failed to init postgres: %v", err)
+	}
+	// Setup Postgres repository and ensure schema if configured
+	pgRepo := pgrepo.NewSnippetRepository(pgPool)
+	defer pgPool.Close()
+	if config.Conf.AutoMigrate {
+		if err := pgRepo.EnsureSchema(ctx); err != nil {
+			logger.Fatal(ctx, "failed to ensure postgres schema: %v", err)
+		}
+	}
+
+	// Compose cached repository: Postgres primary + Redis cache
+	repo := cachedrepo.NewSnippetRepository(pgRepo, redisClient, 10*time.Minute)
 	svc := service.NewService(repo, &service.RealClock{})
 	snippetHandler := handler.NewHandler(svc)
 
@@ -38,7 +55,7 @@ func main() {
 		port = "8080"
 	}
 
-	err := router.Run(":" + port)
+	err = router.Run(":" + port)
 	if err != nil {
 		logger.Fatal(ctx, "failed to start server: %v", err)
 	}

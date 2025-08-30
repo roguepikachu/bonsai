@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/roguepikachu/bonsai/internal/domain"
 	"github.com/roguepikachu/bonsai/internal/repository"
@@ -100,7 +99,7 @@ func (s *Service) GetSnippetByID(ctx context.Context, id string) (domain.Snippet
 	meta := SnippetMeta{CacheStatus: CacheMiss}
 	if err != nil {
 		// Only translate not found at the service boundary
-		if errors.Is(err, redis.Nil) {
+		if errors.Is(err, repository.ErrNotFound) {
 			return domain.Snippet{}, meta, fmt.Errorf("%w", ErrSnippetNotFound)
 		}
 		// All other errors are just wrapped

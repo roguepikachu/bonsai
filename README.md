@@ -47,3 +47,13 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for more information.
 
 ## License
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Configuration
+
+Environment variables:
+
+- BONSAI_PORT: API port (default 8080)
+- REDIS_PORT: Redis address in host:port (default :6379)
+- POSTGRES_URL: Full DSN, e.g. postgres://user:pass@host:5432/db?sslmode=disable
+- POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, POSTGRES_SSLMODE: used if POSTGRES_URL is not set
+- AUTO_MIGRATE: if true, creates the minimal schema on startup

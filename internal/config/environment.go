@@ -17,6 +17,22 @@ type Config struct {
 	BonsaiPort string `env:"BONSAI_PORT"`
 	// RedisPort is the port on which the Redis server runs.
 	RedisPort string `env:"REDIS_PORT"`
+	// PostgresURL is the full DSN for connecting to Postgres. If provided, it will be used as-is.
+	PostgresURL string `env:"POSTGRES_URL"`
+	// PostgresHost is the hostname for Postgres (used if PostgresURL is empty).
+	PostgresHost string `env:"POSTGRES_HOST"`
+	// PostgresPort is the port for Postgres (used if PostgresURL is empty).
+	PostgresPort string `env:"POSTGRES_PORT"`
+	// PostgresUser is the username for Postgres (used if PostgresURL is empty).
+	PostgresUser string `env:"POSTGRES_USER"`
+	// PostgresPassword is the password for Postgres (used if PostgresURL is empty).
+	PostgresPassword string `env:"POSTGRES_PASSWORD"`
+	// PostgresDB is the database name for Postgres (used if PostgresURL is empty).
+	PostgresDB string `env:"POSTGRES_DB"`
+	// PostgresSSLMode controls the sslmode parameter when building a DSN (disable, require, verify-ca, verify-full).
+	PostgresSSLMode string `env:"POSTGRES_SSLMODE"`
+	// AutoMigrate, if true, will run light schema migrations on startup.
+	AutoMigrate bool `env:"AUTO_MIGRATE"`
 }
 
 // Conf holds the global configuration for the Bonsai application.

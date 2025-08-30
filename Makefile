@@ -7,18 +7,34 @@ lint: fmt
 fmt: 
 	go fmt ./...
 
-.PHONY: redis-up redis-down redis-logs redis-restart
+.PHONY: redis-up redis-down redis-logs redis-restart postgres-up postgres-down postgres-logs postgres-restart dev-up dev-down
 
 redis-up:
-	$(DOCKER_COMPOSE) up -d redis
+	docker compose -f $(DOCKER_COMPOSE) up -d redis
 
 redis-down:
-	$(DOCKER_COMPOSE) down
+	docker compose -f $(DOCKER_COMPOSE) down redis
 
 redis-logs:
-	$(DOCKER_COMPOSE) logs -f redis
+	docker compose -f $(DOCKER_COMPOSE) logs -f redis
 
 redis-restart: redis-down redis-up
+
+postgres-up:
+	docker compose -f $(DOCKER_COMPOSE) up -d postgres
+
+postgres-down:
+	docker compose -f $(DOCKER_COMPOSE) down postgres
+
+postgres-logs:
+	docker compose -f $(DOCKER_COMPOSE) logs -f postgres
+
+postgres-restart: postgres-down postgres-up
+
+dev-up: redis-up postgres-up
+
+dev-down:
+	docker compose -f $(DOCKER_COMPOSE) down
 
 # Build the bonsai binary
 .PHONY: bonsai-build
