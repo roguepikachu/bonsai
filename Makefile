@@ -1,11 +1,15 @@
 DOCKER_COMPOSE="docker/docker-compose.yaml"
-DOTENV_PATHS=".env"
+DOTENV_PATHS?=.env
 
 lint: fmt
 	golangci-lint run
 
 fmt: 
 	go fmt ./...
+
+.PHONY: tidy
+tidy:
+	go mod tidy
 
 .PHONY: test test-unit test-integration
 test: test-unit
@@ -45,6 +49,14 @@ dev-up: redis-up postgres-up
 dev-down:
 	docker compose -f $(DOCKER_COMPOSE) down
 
+.PHONY: bootstrap dev
+bootstrap:
+	cp -n .env.example .env || true
+	make dev-up
+	make tidy
+
+dev: bonsai-run
+
 # Build the bonsai binary
 .PHONY: bonsai-build
 bonsai-build:
@@ -63,4 +75,10 @@ bonsai-image:
 # Run bonsai binary (after build)
 .PHONY: start
 start: bonsai-build
-	./bonsai
+	DOTENV_PATHS=$(DOTENV_PATHS) ./bonsai
+
+.PHONY: probes
+probes:
+	curl -sS http://localhost:8080/v1/health | jq . || true
+	curl -sS http://localhost:8080/v1/livez | jq . || true
+	curl -sS http://localhost:8080/v1/readyz | jq . || true

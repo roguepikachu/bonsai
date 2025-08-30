@@ -19,23 +19,27 @@ Bonsai is a fast, lightweight, and scalable snippet store written in Go. It lets
 
 ### Prerequisites
 - Go 1.22 or higher
+- Docker (for local Redis/Postgres)
 
-### Installation
-Clone the repository:
-```sh
-git clone https://github.com/roguepikachu/bonsai.git
-```
-Build the project:
-```sh
-make bonsai-build
-```
+### Quickstart (local)
+1. Bootstrap env and infra
+  ```sh
+  make bootstrap
+  ```
+  This copies `.env.example` to `.env`, starts Redis and Postgres with Docker, and runs `go mod tidy`.
 
-### Usage
-Run the server:
-```sh
-DOTENV_PATHS=.env ./bonsai
-```
-Visit `http://localhost:8080/v1/health` for a quick health check.
+2. Run the API
+  ```sh
+  make dev
+  ```
+
+3. Health checks
+  ```sh
+  make probes
+  ```
+  - Liveness: http://localhost:8080/v1/livez
+  - Readiness: http://localhost:8080/v1/readyz
+  - Legacy: http://localhost:8080/v1/health
 
 ## Documentation
 See the [docs/](docs/) folder for detailed API documentation, architecture, and contribution guidelines.
@@ -50,10 +54,12 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Configuration
 
-Environment variables:
+Copy `.env.example` to `.env` and adjust as needed. Key variables:
 
 - BONSAI_PORT: API port (default 8080)
 - REDIS_PORT: Redis address in host:port (default :6379)
 - POSTGRES_URL: Full DSN, e.g. postgres://user:pass@host:5432/db?sslmode=disable
 - POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, POSTGRES_SSLMODE: used if POSTGRES_URL is not set
 - AUTO_MIGRATE: if true, creates the minimal schema on startup
+- LOG_LEVEL: trace|debug|info|warn|error (default debug)
+- LOG_FORMAT: text|json (default text)

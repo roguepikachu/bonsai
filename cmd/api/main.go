@@ -3,6 +3,10 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/roguepikachu/bonsai/internal/config"
@@ -46,8 +50,9 @@ func main() {
 	repo := cachedrepo.NewSnippetRepository(pgRepo, redisClient, 10*time.Minute)
 	svc := service.NewService(repo, &service.RealClock{})
 	snippetHandler := handler.NewHandler(svc)
+	healthHandler := handler.NewHealthHandler(pgPool, redisClient)
 
-	r := appRouter.NewRouter(snippetHandler)
+	r := appRouter.NewRouter(snippetHandler, healthHandler)
 
 	port := config.Conf.BonsaiPort
 	if port == "" {
@@ -55,8 +60,36 @@ func main() {
 		port = "8080"
 	}
 
-	err = r.Run(":" + port)
-	if err != nil {
-		logger.Fatal(ctx, "failed to start server: %v", err)
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           r,
+		ReadTimeout:       5 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
+
+	// Start server in background
+	go func() {
+		logger.Info(ctx, "starting server on :%s", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal(ctx, "server error: %v", err)
+		}
+	}()
+
+	// Graceful shutdown on SIGINT/SIGTERM
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	<-stop
+	logger.Info(ctx, "shutdown signal received, shutting down...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Error(ctx, "graceful shutdown failed: %v", err)
+		if cerr := srv.Close(); cerr != nil {
+			logger.Error(ctx, "server close failed: %v", cerr)
+		}
+	}
+	logger.Info(ctx, "server stopped cleanly")
 }
