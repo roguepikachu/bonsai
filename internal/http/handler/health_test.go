@@ -14,7 +14,7 @@ import (
 // fake pgxpool with Ping override
 type fakePinger struct{ err error }
 
-func (f fakePinger) Ping(ctx context.Context) error { return f.err }
+func (f fakePinger) Ping(_ context.Context) error { return f.err }
 
 func TestHealth(t *testing.T) {
 	gin.SetMode(gin.TestMode)

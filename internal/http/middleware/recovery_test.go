@@ -12,7 +12,7 @@ func TestRecovery_CatchesPanic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(Recovery())
-	r.GET("/panic", func(c *gin.Context) { panic("boom") })
+	r.GET("/panic", func(_ *gin.Context) { panic("boom") })
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/panic", nil))

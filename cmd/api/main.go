@@ -30,7 +30,11 @@ func main() {
 
 	// Setup Redis client
 	redisClient := data.NewRedisClient()
-	defer redisClient.Close()
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			logger.WithField(ctx, "error", err.Error()).Warn("redis close failed")
+		}
+	}()
 
 	// Setup Postgres pool
 	pgPool, err := data.NewPostgresPool(ctx)

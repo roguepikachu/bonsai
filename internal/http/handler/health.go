@@ -14,16 +14,17 @@ import (
 	"github.com/roguepikachu/bonsai/pkg/logger"
 )
 
-// Health keeps the legacy simple health endpoint for backwards compatibility.
+// Health handles the legacy simple health endpoint for backwards compatibility.
 func Health(c *gin.Context) {
 	c.JSON(http.StatusOK, pkg.NewResponse(http.StatusOK, gin.H{"ok": true}, "ok"))
 }
 
-// HealthHandler provides liveness and readiness probes checking downstream deps.
+// Pinger is a minimal interface for types that can be pinged for health checks.
 type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
+// HealthHandler provides liveness and readiness probes checking downstream dependencies.
 type HealthHandler struct {
 	pg    Pinger
 	redis Pinger

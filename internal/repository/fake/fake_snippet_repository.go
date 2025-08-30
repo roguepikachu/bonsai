@@ -42,11 +42,13 @@ func NewSnippetRepository(opts ...Option) *SnippetRepository {
 	return r
 }
 
+// Insert stores or overwrites the given snippet by its ID.
 func (r *SnippetRepository) Insert(_ context.Context, s domain.Snippet) error {
 	r.byID[s.ID] = s
 	return nil
 }
 
+// FindByID returns a snippet by ID or repository.ErrNotFound if missing.
 func (r *SnippetRepository) FindByID(_ context.Context, id string) (domain.Snippet, error) {
 	if s, ok := r.byID[id]; ok {
 		return s, nil
@@ -54,6 +56,7 @@ func (r *SnippetRepository) FindByID(_ context.Context, id string) (domain.Snipp
 	return domain.Snippet{}, repository.ErrNotFound
 }
 
+// List returns non-expired snippets filtered by tag and paginated.
 func (r *SnippetRepository) List(_ context.Context, page, limit int, tag string) ([]domain.Snippet, error) {
 	now := r.now()
 	items := make([]domain.Snippet, 0, len(r.byID))

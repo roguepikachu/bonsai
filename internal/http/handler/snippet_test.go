@@ -17,13 +17,13 @@ type mockSnippetService struct {
 	byID map[string]domain.Snippet
 }
 
-func (m *mockSnippetService) CreateSnippet(ctx context.Context, content string, expiresIn int, tags []string) (domain.Snippet, error) {
+func (m *mockSnippetService) CreateSnippet(_ context.Context, _ string, _ int, _ []string) (domain.Snippet, error) {
 	return domain.Snippet{}, nil
 }
-func (m *mockSnippetService) ListSnippets(ctx context.Context, page, limit int, tag string) ([]domain.Snippet, error) {
+func (m *mockSnippetService) ListSnippets(_ context.Context, _ int, _ int, _ string) ([]domain.Snippet, error) {
 	return m.list, nil
 }
-func (m *mockSnippetService) GetSnippetByID(ctx context.Context, id string) (domain.Snippet, service.SnippetMeta, error) {
+func (m *mockSnippetService) GetSnippetByID(_ context.Context, id string) (domain.Snippet, service.SnippetMeta, error) {
 	if s, ok := m.byID[id]; ok {
 		return s, service.SnippetMeta{CacheStatus: service.CacheHit}, nil
 	}
