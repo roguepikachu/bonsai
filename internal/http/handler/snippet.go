@@ -1,7 +1,5 @@
 package handler
 
-// Package handler provides HTTP handlers for the API endpoints.
-
 import (
 	"context"
 	"errors"
@@ -14,16 +12,6 @@ import (
 )
 
 const (
-	// DefaultPage is the default page number for pagination.
-	DefaultPage = 1
-	// DefaultLimit is the default number of items per page for pagination.
-	DefaultLimit = 20
-	// MaxLimit is the maximum number of items per page for pagination.
-	MaxLimit = 100
-	// MaxSnippetBytes is the maximum allowed size of a snippet in bytes.
-	MaxSnippetBytes = 10 * 1024
-	// MaxExpirySecs is the maximum expiry time for a snippet in seconds.
-	MaxExpirySecs = 30 * 24 * 3600
 	// TimeFormat is the standard format for time serialization.
 	TimeFormat = "2006-01-02T15:04:05Z"
 )
@@ -51,14 +39,14 @@ func (h *Handler) Create(c *gin.Context) {
 	var req domain.CreateSnippetRequestDTO
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "failed to bind JSON: %s", err.Error())
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request", "details": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "bad_request", "message": "invalid request", "details": err.Error()}})
 		return
 	}
 
 	snippet, err := h.svc.CreateSnippet(ctx, req.Content, req.ExpiresIn, req.Tags)
 	if err != nil {
 		logger.Error(ctx, "failed to create snippet: %s", err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"code": "internal_error", "message": "internal server error"}})
 		return
 	}
 	createdAt := snippet.CreatedAt.UTC().Format(TimeFormat)
@@ -88,23 +76,23 @@ func (h *Handler) List(c *gin.Context) {
 	var q queryParams
 	if err := c.ShouldBindQuery(&q); err != nil {
 		logger.Error(ctx, "invalid query params: %s", err.Error())
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query parameters", "details": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "bad_request", "message": "invalid query parameters", "details": err.Error()}})
 		return
 	}
-	// Cap pagination
-	if q.Limit > MaxLimit {
-		q.Limit = MaxLimit
-	}
+	// Cap pagination defensively
 	if q.Limit < 1 {
-		q.Limit = DefaultLimit
+		q.Limit = service.ServiceDefaultLimit
+	}
+	if q.Limit > service.ServiceMaxLimit {
+		q.Limit = service.ServiceMaxLimit
 	}
 	if q.Page < 1 {
-		q.Page = DefaultPage
+		q.Page = service.ServiceDefaultPage
 	}
 	items, err := h.svc.ListSnippets(ctx, q.Page, q.Limit, q.Tag)
 	if err != nil {
 		logger.Error(ctx, "failed to list snippets: %s", err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"code": "internal_error", "message": "internal server error"}})
 		return
 	}
 	list := make([]domain.SnippetListItemDTO, 0, len(items))
@@ -134,22 +122,22 @@ func (h *Handler) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	id := c.Param("id")
 	if id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "bad_request", "message": "id is required"}})
 		return
 	}
 	snippet, meta, err := h.svc.GetSnippetByID(ctx, id)
 	cacheStatus := string(meta.CacheStatus)
 	if err != nil {
 		if errors.Is(err, service.ErrSnippetNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"code": "not_found", "message": "not found"}})
 			return
 		}
 		if errors.Is(err, service.ErrSnippetExpired) {
-			c.JSON(http.StatusGone, gin.H{"error": "expired"})
+			c.JSON(http.StatusGone, gin.H{"error": gin.H{"code": "gone", "message": "expired"}})
 			return
 		}
 		logger.Error(ctx, "failed to get snippet: %s", err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"code": "internal_error", "message": "internal server error"}})
 		return
 	}
 	c.Header("X-Cache", cacheStatus)

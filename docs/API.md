@@ -1,6 +1,6 @@
 # API.md
 
-All endpoints are **JSON only** and versioned under `/v1`.
+All endpoints are JSON only and versioned under `/v1`.
 
 Error responses follow this envelope:
 
@@ -22,12 +22,12 @@ Error responses follow this envelope:
 
 **GET /v1/health**
 
-Checks service and Redis connectivity.
+Checks service health.
 
 **200 Response**
 
 ```json
-{ "ok": true, "redis": "pong" }
+{ "code": 200, "data": { "ok": true }, "message": "ok" }
 ```
 
 ---
@@ -123,7 +123,7 @@ Fetches snippet content. Uses cache-aside in Redis.
 
 ### 5. Update Snippet
 
-**PATCH /v1/snippets/\:id**
+Future: PATCH /v1/snippets/\:id
 
 Updates snippet content or expiry. Invalidates cache.
 
@@ -152,7 +152,7 @@ Updates snippet content or expiry. Invalidates cache.
 
 ### 6. Delete Snippet
 
-**DELETE /v1/snippets/\:id**
+Future: DELETE /v1/snippets/\:id
 
 Soft delete a snippet and clears cache.
 
@@ -170,7 +170,7 @@ Soft delete a snippet and clears cache.
 
 ### 7. Snippet Metrics
 
-**GET /v1/snippets/\:id/metrics**
+Future: GET /v1/snippets/\:id/metrics
 
 Returns aggregated analytics.
 
@@ -197,7 +197,7 @@ Returns aggregated analytics.
 
 ### 8. Service Metrics
 
-**GET /v1/metrics**
+Future: GET /v1/metrics
 
 Prometheus-style metrics for ops and monitoring.
 

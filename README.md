@@ -5,7 +5,7 @@
   <img src="img/bonsai.png" alt="Bonsai logo" width="300"/>
 </p>
 
-Bonsai is a fast, lightweight, and scalable URL shortener written in Go. It allows you to create short, shareable links that redirect to long URLs, making it easy to manage and track your links.
+Bonsai is a fast, lightweight, and scalable snippet store written in Go. It lets you create short text snippets with optional expiry and tags.
 
 ## Features
 - Simple and clean API for creating and managing short URLs
@@ -18,24 +18,24 @@ Bonsai is a fast, lightweight, and scalable URL shortener written in Go. It allo
 ## Getting Started
 
 ### Prerequisites
-- Go 1.18 or higher
+- Go 1.22 or higher
 
 ### Installation
 Clone the repository:
 ```sh
-git clone https://github.com/yourusername/bonsai.git
+git clone https://github.com/roguepikachu/bonsai.git
 ```
 Build the project:
 ```sh
-go build -o bonsai
+make bonsai-build
 ```
 
 ### Usage
 Run the server:
 ```sh
-./bonsai
+DOTENV_PATHS=.env ./bonsai
 ```
-Visit `http://localhost:8080` to access the API or web interface (if available).
+Visit `http://localhost:8080/v1/health` for a quick health check.
 
 ## Documentation
 See the [docs/](docs/) folder for detailed API documentation, architecture, and contribution guidelines.

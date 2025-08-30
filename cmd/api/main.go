@@ -8,7 +8,7 @@ import (
 	"github.com/roguepikachu/bonsai/internal/config"
 	"github.com/roguepikachu/bonsai/internal/data"
 	"github.com/roguepikachu/bonsai/internal/http/handler"
-	"github.com/roguepikachu/bonsai/internal/http/router"
+	appRouter "github.com/roguepikachu/bonsai/internal/http/router"
 	"github.com/roguepikachu/bonsai/internal/service"
 	"github.com/roguepikachu/bonsai/pkg/logger"
 
@@ -47,7 +47,7 @@ func main() {
 	svc := service.NewService(repo, &service.RealClock{})
 	snippetHandler := handler.NewHandler(svc)
 
-	router := router.NewRouter(snippetHandler)
+	r := appRouter.NewRouter(snippetHandler)
 
 	port := config.Conf.BonsaiPort
 	if port == "" {
@@ -55,7 +55,7 @@ func main() {
 		port = "8080"
 	}
 
-	err = router.Run(":" + port)
+	err = r.Run(":" + port)
 	if err != nil {
 		logger.Fatal(ctx, "failed to start server: %v", err)
 	}

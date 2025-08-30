@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/roguepikachu/bonsai/internal/utils/ctxutil"
 	"github.com/sirupsen/logrus"
 )
 
@@ -52,88 +53,108 @@ func setLogLevel(level string) {
 
 // Info logs an informational message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Info(ctx context.Context, msg string, args ...any) {
-	var reqID string
-	// Support both string and struct{} context keys for requestId
-	if v := ctx.Value("requestId"); v != nil {
-		if s, ok := v.(string); ok && s != "" {
-			reqID = s
+	reqID := ctxutil.RequestID(ctx)
+	clientID := ctxutil.ClientID(ctx)
+	if reqID != "" || clientID != "" {
+		entry := logrus.WithFields(logrus.Fields{})
+		if reqID != "" {
+			entry = entry.WithField("requestId", reqID)
 		}
-	}
-	if v := ctx.Value(struct{} /*ctxKeyRequestID*/ {}); v != nil {
-		if s, ok := v.(string); ok && s != "" {
-			reqID = s
+		if clientID != "" {
+			entry = entry.WithField("clientId", clientID)
 		}
+		entry.Infof(msg, args...)
+		return
 	}
-	if reqID != "" {
-		logrus.WithField("requestId", reqID).Infof(msg, args...)
-	} else {
-		logrus.Infof(msg, args...)
-	}
+	logrus.Infof(msg, args...)
 }
 
 // Debug logs a debug message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Debug(ctx context.Context, msg string, args ...any) {
-	var reqID string
-	if v := ctx.Value("requestId"); v != nil {
-		if s, ok := v.(string); ok && s != "" {
-			reqID = s
+	reqID := ctxutil.RequestID(ctx)
+	clientID := ctxutil.ClientID(ctx)
+	if reqID != "" || clientID != "" {
+		entry := logrus.WithFields(logrus.Fields{})
+		if reqID != "" {
+			entry = entry.WithField("requestId", reqID)
 		}
-	}
-	if v := ctx.Value(struct{} /*ctxKeyRequestID*/ {}); v != nil {
-		if s, ok := v.(string); ok && s != "" {
-			reqID = s
+		if clientID != "" {
+			entry = entry.WithField("clientId", clientID)
 		}
+		entry.Debugf(msg, args...)
+		return
 	}
-	if reqID != "" {
-		logrus.WithField("requestId", reqID).Debugf(msg, args...)
-	} else {
-		logrus.Debugf(msg, args...)
-	}
+	logrus.Debugf(msg, args...)
 }
 
 // Error logs an error message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Error(ctx context.Context, msg string, args ...any) {
-	var reqID string
-	if v := ctx.Value("requestId"); v != nil {
-		if s, ok := v.(string); ok && s != "" {
-			reqID = s
+	reqID := ctxutil.RequestID(ctx)
+	clientID := ctxutil.ClientID(ctx)
+	if reqID != "" || clientID != "" {
+		entry := logrus.WithFields(logrus.Fields{})
+		if reqID != "" {
+			entry = entry.WithField("requestId", reqID)
 		}
-	}
-	if v := ctx.Value(struct{} /*ctxKeyRequestID*/ {}); v != nil {
-		if s, ok := v.(string); ok && s != "" {
-			reqID = s
+		if clientID != "" {
+			entry = entry.WithField("clientId", clientID)
 		}
+		entry.Errorf(msg, args...)
+		return
 	}
-	if reqID != "" {
-		logrus.WithField("requestId", reqID).Errorf(msg, args...)
-	} else {
-		logrus.Errorf(msg, args...)
-	}
+	logrus.Errorf(msg, args...)
 }
 
 // Trace logs a trace message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Trace(ctx context.Context, msg string, args ...any) {
-	if reqID, ok := ctx.Value("requestId").(string); ok && reqID != "" {
-		logrus.WithField("requestId", reqID).Tracef(msg, args...)
-	} else {
-		logrus.Tracef(msg, args...)
+	reqID := ctxutil.RequestID(ctx)
+	clientID := ctxutil.ClientID(ctx)
+	if reqID != "" || clientID != "" {
+		entry := logrus.WithFields(logrus.Fields{})
+		if reqID != "" {
+			entry = entry.WithField("requestId", reqID)
+		}
+		if clientID != "" {
+			entry = entry.WithField("clientId", clientID)
+		}
+		entry.Tracef(msg, args...)
+		return
 	}
+	logrus.Tracef(msg, args...)
 }
 
 // Warn logs a warning message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Warn(ctx context.Context, msg string, args ...any) {
-	if reqID, ok := ctx.Value("requestId").(string); ok && reqID != "" {
-		logrus.WithField("requestId", reqID).Warnf(msg, args...)
-	} else {
-		logrus.Warnf(msg, args...)
+	reqID := ctxutil.RequestID(ctx)
+	clientID := ctxutil.ClientID(ctx)
+	if reqID != "" || clientID != "" {
+		entry := logrus.WithFields(logrus.Fields{})
+		if reqID != "" {
+			entry = entry.WithField("requestId", reqID)
+		}
+		if clientID != "" {
+			entry = entry.WithField("clientId", clientID)
+		}
+		entry.Warnf(msg, args...)
+		return
 	}
+	logrus.Warnf(msg, args...)
 }
 
 // Fatal logs a fatal message with optional formatting arguments and then exits the application. If a request ID is present in the context, it is included in the log.
 func Fatal(ctx context.Context, msg string, args ...any) {
-	if reqID, ok := ctx.Value("requestId").(string); ok && reqID != "" {
-		logrus.WithField("requestId", reqID).Fatalf(msg, args...)
-	} else {
-		logrus.Fatalf(msg, args...)
+	reqID := ctxutil.RequestID(ctx)
+	clientID := ctxutil.ClientID(ctx)
+	if reqID != "" || clientID != "" {
+		entry := logrus.WithFields(logrus.Fields{})
+		if reqID != "" {
+			entry = entry.WithField("requestId", reqID)
+		}
+		if clientID != "" {
+			entry = entry.WithField("clientId", clientID)
+		}
+		entry.Fatalf(msg, args...)
+		return
 	}
+	logrus.Fatalf(msg, args...)
 }
