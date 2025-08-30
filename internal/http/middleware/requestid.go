@@ -8,10 +8,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// RequestIDMiddleware sets a unique requestId in the context for each request.
-
 type ctxKeyRequestID struct{}
 
+// RequestIDMiddleware sets a unique requestId in the context for each request.
 func RequestIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := uuid.New().String()
