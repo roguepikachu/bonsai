@@ -67,18 +67,28 @@ func (r *SnippetRepository) List(_ context.Context, page, limit int, tag string)
 		items = append(items, s)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
-	if page < 1 { page = 1 }
-	if limit < 1 { limit = 1 }
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 1
+	}
 	start := (page - 1) * limit
-	if start >= len(items) { return []domain.Snippet{}, nil }
+	if start >= len(items) {
+		return []domain.Snippet{}, nil
+	}
 	end := start + limit
-	if end > len(items) { end = len(items) }
+	if end > len(items) {
+		end = len(items)
+	}
 	return items[start:end], nil
 }
 
 func containsTag(tags []string, want string) bool {
 	for _, t := range tags {
-		if strings.EqualFold(t, want) { return true }
+		if strings.EqualFold(t, want) {
+			return true
+		}
 	}
 	return false
 }
