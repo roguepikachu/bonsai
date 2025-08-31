@@ -28,3 +28,19 @@ func TestRequestIDMiddleware_SetsHeaders(t *testing.T) {
 		t.Fatalf("%s header should be set", headerClientID)
 	}
 }
+
+func TestRequestIDMiddleware_PropagatesProvided(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(RequestIDMiddleware())
+	r.GET("/ping", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	req.Header.Set("X-Request-ID", "rid-xyz")
+	req.Header.Set("X-Client-ID", "cid-xyz")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Header().Get(headerRequestID) != "rid-xyz" || w.Header().Get(headerClientID) != "cid-xyz" {
+		t.Fatalf("did not propagate provided headers: %s %s", w.Header().Get(headerRequestID), w.Header().Get(headerClientID))
+	}
+}
