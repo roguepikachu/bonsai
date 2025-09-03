@@ -1,13 +1,17 @@
 
 # Architecture
 
+## Overview
+
+Bonsai is a text snippet sharing service built with clean architecture principles, focusing on performance, reliability, and scalability.
+
 ## 1. Components
 
-- **API service** in Go
-- **Storage** as in-memory for V1 (can swap to SQLite or Postgres later)
-- **Redis** for cache, rate limiting, analytics aggregation, pubsub, streams
-- **Worker service** for background aggregation and trend updates
-- **Optional Web client** for viewing snippets and live counters
+- **API Service** - Go-based REST API using Gin framework
+- **PostgreSQL** - Primary storage for snippets with JSONB support for tags
+- **Redis** - Caching layer, rate limiting, and future real-time features
+- **Worker Service** (Future) - Background jobs for cleanup and analytics
+- **Web Client** (Future) - Optional UI for viewing snippets
 
 ```mermaid
 flowchart LR
