@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ type stubClock struct{ t time.Time }
 func (s stubClock) Now() time.Time { return s.t }
 
 type fakeRepo struct {
+	mu           sync.RWMutex
 	inserted     []domain.Snippet
 	findByID     map[string]domain.Snippet
 	listSnippets []domain.Snippet
@@ -32,6 +34,8 @@ type fakeRepo struct {
 }
 
 func (f *fakeRepo) Insert(_ context.Context, s domain.Snippet) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.insertCall++
 	if f.insertErr != nil {
 		return f.insertErr
@@ -45,6 +49,8 @@ func (f *fakeRepo) Insert(_ context.Context, s domain.Snippet) error {
 }
 
 func (f *fakeRepo) FindByID(_ context.Context, id string) (domain.Snippet, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	f.findCall++
 	if f.findErr != nil {
 		return domain.Snippet{}, f.findErr
@@ -56,6 +62,8 @@ func (f *fakeRepo) FindByID(_ context.Context, id string) (domain.Snippet, error
 }
 
 func (f *fakeRepo) List(_ context.Context, page, limit int, tag string) ([]domain.Snippet, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	f.listCall++
 	f.listArgs.page, f.listArgs.limit, f.listArgs.tag = page, limit, tag
 	if f.listErr != nil {

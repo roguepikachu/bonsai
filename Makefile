@@ -41,11 +41,12 @@ tidy: ## Tidy go.mod and go.sum
 .PHONY: test test-unit test-integration
 test: test-unit ## Run unit tests (default test target)
 
-test-unit: ## Run unit tests
-	$(GO) test $(GOTESTFLAGS) $(PKG)
+test-unit: ## Run unit tests with coverage (no external services required)
+	$(GO) test -race -coverprofile=coverage.out -covermode=atomic $(GOTESTFLAGS) -short $(PKG)
+	$(GO) tool cover -func=coverage.out
 
-test-integration: ## Run integration tests (requires services up)
-	$(GO) test -tags=integration $(GOTESTFLAGS) $(PKG)
+test-integration: ## Run integration tests with coverage (requires services up)
+	$(GO) test -tags=integration -race -coverprofile=coverage-integration.out -covermode=atomic $(GOTESTFLAGS) $(PKG)
 
 ##@ Dev services (Docker)
 .PHONY: db-up db-down redis-up redis-down redis-logs redis-restart postgres-up postgres-down postgres-logs postgres-restart dev-up dev-down
