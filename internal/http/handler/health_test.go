@@ -13,13 +13,13 @@ import (
 )
 
 // fake pgxpool with Ping override
-type fakePinger struct{ 
-	err error
-	delay time.Duration
+type fakePinger struct {
+	err       error
+	delay     time.Duration
 	pingCount int
 }
 
-func (f *fakePinger) Ping(ctx context.Context) error { 
+func (f *fakePinger) Ping(ctx context.Context) error {
 	f.pingCount++
 	if f.delay > 0 {
 		select {
@@ -28,10 +28,10 @@ func (f *fakePinger) Ping(ctx context.Context) error {
 		case <-time.After(f.delay):
 		}
 	}
-	return f.err 
+	return f.err
 }
 
-type slowPinger struct{
+type slowPinger struct {
 	delay time.Duration
 }
 
@@ -473,7 +473,7 @@ func TestNewHealthHandler(t *testing.T) {
 	// NewHealthHandler only accepts *pgxpool.Pool and *redis.Client
 	// We'll test the actual constructor behavior with nil values
 	hh := NewHealthHandler(nil, nil)
-	
+
 	if hh == nil {
 		t.Fatalf("expected handler to be created")
 	}
@@ -481,7 +481,7 @@ func TestNewHealthHandler(t *testing.T) {
 		t.Fatalf("expected pg to be nil when nil pool is passed")
 	}
 	if hh.redis != nil {
-		t.Fatalf("expected redis to be nil when nil client is passed") 
+		t.Fatalf("expected redis to be nil when nil client is passed")
 	}
 	if hh.pingTimeout != time.Second {
 		t.Fatalf("expected default timeout to be 1 second, got %v", hh.pingTimeout)

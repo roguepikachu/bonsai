@@ -87,7 +87,7 @@ func TestWith_ComplexValues(t *testing.T) {
 
 func TestWithField_DifferentTypes(t *testing.T) {
 	ctx := context.Background()
-	
+
 	tests := []struct {
 		name  string
 		key   string
@@ -124,7 +124,7 @@ func TestWithField_EmptyKey(t *testing.T) {
 
 func TestLoggingMethods(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// These should not panic
 	Debug(ctx, "debug message")
 	Info(ctx, "info message")
@@ -134,7 +134,7 @@ func TestLoggingMethods(t *testing.T) {
 
 func TestLoggingMethodsWithFormatting(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// These should not panic and should handle formatting
 	Debug(ctx, "debug: %s %d", "test", 123)
 	Info(ctx, "info: %v", map[string]int{"count": 42})
@@ -144,7 +144,7 @@ func TestLoggingMethodsWithFormatting(t *testing.T) {
 
 func TestLoggingWithContext(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Create entry with fields and log
 	e := With(ctx, map[string]any{"component": "test", "request_id": "123"})
 	e.Debug("debug with context")
@@ -155,7 +155,7 @@ func TestLoggingWithContext(t *testing.T) {
 
 func TestLoggingWithFieldContext(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Create entry with single field and log
 	e := WithField(ctx, "user_id", "user-456")
 	e.Debug("debug with field")
@@ -166,12 +166,12 @@ func TestLoggingWithFieldContext(t *testing.T) {
 
 func TestChainedLogging(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Chain multiple field additions
 	e := WithField(ctx, "service", "bonsai")
 	e = e.WithField("version", "1.0.0")
 	e = e.WithField("env", "test")
-	
+
 	e.Info("chained logging example")
 }
 
@@ -183,7 +183,7 @@ func TestNilContext(t *testing.T) {
 	Info(ctx, "info message")
 	Warn(ctx, "warn message")
 	Error(ctx, "error message")
-	
+
 	// Test WithField and With with proper context
 	_ = WithField(ctx, "key", "value")
 	_ = With(ctx, map[string]any{"key": "value"})
@@ -191,7 +191,7 @@ func TestNilContext(t *testing.T) {
 
 func TestConcurrentLogging(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Test concurrent logging to ensure no race conditions
 	done := make(chan bool, 10)
 	for i := 0; i < 10; i++ {
@@ -202,7 +202,7 @@ func TestConcurrentLogging(t *testing.T) {
 			done <- true
 		}(i)
 	}
-	
+
 	// Wait for all goroutines
 	for i := 0; i < 10; i++ {
 		<-done
@@ -211,18 +211,18 @@ func TestConcurrentLogging(t *testing.T) {
 
 func TestLargeData(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Test logging with large data structures
 	largeSlice := make([]int, 1000)
 	for i := range largeSlice {
 		largeSlice[i] = i
 	}
-	
+
 	largeMap := make(map[string]interface{})
 	for i := 0; i < 100; i++ {
 		largeMap[Sprintf("key%d", i)] = Sprintf("value%d", i)
 	}
-	
+
 	e := With(ctx, map[string]any{
 		"large_slice": largeSlice,
 		"large_map":   largeMap,
@@ -232,11 +232,11 @@ func TestLargeData(t *testing.T) {
 
 func TestSpecialCharacters(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Test with special characters and unicode
 	specialChars := "!@#$%^&*(){}[]|\\:;\"'<>?,./"
 	unicode := "こんにちは世界 🌍 emoji test"
-	
+
 	e := With(ctx, map[string]any{
 		"special": specialChars,
 		"unicode": unicode,
@@ -246,12 +246,12 @@ func TestSpecialCharacters(t *testing.T) {
 
 func TestErrorInterface(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Test logging actual error types
 	err := context.DeadlineExceeded
 	e := WithField(ctx, "error", err)
 	e.Error("error occurred")
-	
+
 	// Test with nil error
 	var nilErr error
 	e2 := WithField(ctx, "error", nilErr)
@@ -260,14 +260,14 @@ func TestErrorInterface(t *testing.T) {
 
 func TestMultipleWithCalls(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Test multiple With calls don't interfere
 	e1 := With(ctx, map[string]any{"service": "api"})
 	e2 := With(ctx, map[string]any{"service": "worker"})
-	
+
 	e1.Info("message from api service")
 	e2.Info("message from worker service")
-	
+
 	// They should be independent
 	e1.WithField("request_id", "req1").Info("api with request")
 	e2.WithField("job_id", "job1").Info("worker with job")

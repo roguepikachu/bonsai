@@ -99,7 +99,7 @@ func TestRequestLogger_HTTPMethods(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(RequestLogger())
-	
+
 	r.GET("/resource", func(c *gin.Context) { c.Status(http.StatusOK) })
 	r.POST("/resource", func(c *gin.Context) { c.Status(http.StatusCreated) })
 	r.PUT("/resource", func(c *gin.Context) { c.Status(http.StatusOK) })
@@ -273,10 +273,10 @@ func TestRequestLogger_MethodNotAllowed(t *testing.T) {
 func TestRequestLogger_MultipleMiddlewares(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	
+
 	middleware1Called := false
 	middleware2Called := false
-	
+
 	r.Use(func(c *gin.Context) {
 		middleware1Called = true
 		c.Next()
@@ -286,7 +286,7 @@ func TestRequestLogger_MultipleMiddlewares(t *testing.T) {
 		middleware2Called = true
 		c.Next()
 	})
-	
+
 	r.GET("/test", func(c *gin.Context) { c.Status(http.StatusOK) })
 
 	w := httptest.NewRecorder()
@@ -420,7 +420,7 @@ func TestRequestLogger_CustomContentTypes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(RequestLogger())
-	
+
 	r.GET("/json", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"type": "json"})
 	})

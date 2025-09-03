@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  redis-test:
+    image: public.ecr.aws/docker/library/redis:latest
+    container_name: redis-test
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-test-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+
+  postgres-test:
+    image: public.ecr.aws/docker/library/postgres:16
+    container_name: postgres-test
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bonsai_test
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg-test-data:/var/lib/postgresql/data
+
+volumes:
+  redis-test-data:
+  pg-test-data:

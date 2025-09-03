@@ -144,11 +144,11 @@ func TestRecovery_PanicWithStruct(t *testing.T) {
 func TestRecovery_MultipleMiddlewares(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	
+
 	// Add multiple middlewares
 	middleware1Called := false
 	middleware2Called := false
-	
+
 	r.Use(func(c *gin.Context) {
 		middleware1Called = true
 		c.Next()
@@ -158,7 +158,7 @@ func TestRecovery_MultipleMiddlewares(t *testing.T) {
 		middleware2Called = true
 		c.Next()
 	})
-	
+
 	r.GET("/panic", func(_ *gin.Context) {
 		panic("test panic")
 	})
@@ -181,7 +181,7 @@ func TestRecovery_HTTPMethods(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(Recovery())
-	
+
 	// Test different HTTP methods
 	r.GET("/panic", func(_ *gin.Context) { panic("GET panic") })
 	r.POST("/panic", func(_ *gin.Context) { panic("POST panic") })
@@ -243,7 +243,7 @@ func TestRecovery_LongStackTrace(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(Recovery())
-	
+
 	// Create deep call stack
 	var deepFunc func(int)
 	deepFunc = func(depth int) {
@@ -252,7 +252,7 @@ func TestRecovery_LongStackTrace(t *testing.T) {
 		}
 		deepFunc(depth - 1)
 	}
-	
+
 	r.GET("/deep-panic", func(_ *gin.Context) {
 		deepFunc(10)
 	})

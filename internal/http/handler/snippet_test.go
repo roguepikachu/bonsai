@@ -18,15 +18,15 @@ import (
 )
 
 type mockSnippetService struct {
-	list       []domain.Snippet
-	byID       map[string]domain.Snippet
-	createErr  error
-	listErr    error
-	getErr     error
-	created    []domain.Snippet
-	listCalls  int
+	list        []domain.Snippet
+	byID        map[string]domain.Snippet
+	createErr   error
+	listErr     error
+	getErr      error
+	created     []domain.Snippet
+	listCalls   int
 	createCalls int
-	getCalls   int
+	getCalls    int
 }
 
 func (m *mockSnippetService) CreateSnippet(_ context.Context, content string, expiresIn int, tags []string) (domain.Snippet, error) {

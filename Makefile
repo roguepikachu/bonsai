@@ -38,7 +38,7 @@ tidy: ## Tidy go.mod and go.sum
 	$(GO) mod tidy
 
 ##@ Tests
-.PHONY: test test-unit test-integration
+.PHONY: test test-unit test-integration test-e2e test-all
 test: test-unit ## Run unit tests (default test target)
 
 test-unit: ## Run unit tests with coverage (no external services required)
@@ -47,6 +47,11 @@ test-unit: ## Run unit tests with coverage (no external services required)
 
 test-integration: ## Run integration tests with coverage (requires services up)
 	$(GO) test -tags=integration -race -coverprofile=coverage-integration.out -covermode=atomic $(GOTESTFLAGS) $(PKG)
+
+test-e2e: ## Run end-to-end acceptance tests (starts and stops services automatically)
+	$(GO) test -race -v $(GOTESTFLAGS) ./internal/http/acceptance -run "TestE2E"
+
+test-all: test-unit test-integration test-e2e ## Run all tests
 
 ##@ Dev services (Docker)
 .PHONY: db-up db-down redis-up redis-down redis-logs redis-restart postgres-up postgres-down postgres-logs postgres-restart dev-up dev-down

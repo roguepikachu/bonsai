@@ -17,7 +17,7 @@ import (
 )
 
 // test service implementing handler.SnippetService
-type testSvc struct{
+type testSvc struct {
 	shouldFailCreate bool
 	shouldFailList   bool
 	shouldFailGet    bool
@@ -221,7 +221,7 @@ func TestRouter_InvalidRoutes(t *testing.T) {
 		{"Invalid path", http.MethodGet, "/invalid", http.StatusNotFound},
 		{"Wrong version", http.MethodGet, "/v2/snippets", http.StatusNotFound},
 		{"Missing resource", http.MethodGet, "/v1/", http.StatusNotFound},
-		{"Wrong method on health", http.MethodDelete, "/v1/health", http.StatusNotFound}, // health only accepts GET
+		{"Wrong method on health", http.MethodDelete, "/v1/health", http.StatusNotFound},       // health only accepts GET
 		{"Wrong path structure", http.MethodGet, "/v1/snippets/", http.StatusMovedPermanently}, // gin redirects trailing slash
 	}
 
@@ -271,7 +271,7 @@ func TestRouter_ContentTypes(t *testing.T) {
 	}{
 		{"JSON create", http.MethodPost, "/v1/snippets", "application/json", `{"content":"test"}`, http.StatusCreated},
 		{"Wrong content type", http.MethodPost, "/v1/snippets", "text/plain", `{"content":"test"}`, http.StatusCreated}, // gin still parses valid JSON
-		{"No content type", http.MethodPost, "/v1/snippets", "", `{"content":"test"}`, http.StatusCreated}, // gin still parses valid JSON
+		{"No content type", http.MethodPost, "/v1/snippets", "", `{"content":"test"}`, http.StatusCreated},              // gin still parses valid JSON
 		{"Invalid JSON", http.MethodPost, "/v1/snippets", "application/json", `{invalid}`, http.StatusBadRequest},
 	}
 
@@ -464,10 +464,10 @@ func TestRouter_ConcurrentRequests(t *testing.T) {
 
 func TestRouter_Panic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	
+
 	// Create a router with recovery middleware
 	r := NewRouter(h.NewHandler(&testSvc{}), h.NewHealthHandler(nil, nil))
-	
+
 	// Add a route that panics for testing
 	v1 := r.Group("/v1")
 	v1.GET("/panic", func(c *gin.Context) {

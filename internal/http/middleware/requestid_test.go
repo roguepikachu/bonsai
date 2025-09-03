@@ -154,7 +154,7 @@ func TestRequestIDMiddleware_ContextValues(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(RequestIDMiddleware())
-	
+
 	var contextRequestID, contextClientID string
 	r.GET("/test", func(c *gin.Context) {
 		contextRequestID = utils.RequestID(c.Request.Context())
@@ -184,7 +184,7 @@ func TestRequestIDMiddleware_HTTPMethods(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(RequestIDMiddleware())
-	
+
 	r.GET("/resource", func(c *gin.Context) { c.Status(http.StatusOK) })
 	r.POST("/resource", func(c *gin.Context) { c.Status(http.StatusCreated) })
 	r.PUT("/resource", func(c *gin.Context) { c.Status(http.StatusOK) })
@@ -317,26 +317,26 @@ func TestRequestIDMiddleware_SpecialCharacters(t *testing.T) {
 func TestRequestIDMiddleware_MultipleMiddlewares(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	
+
 	var firstRequestID, firstClientID string
 	var secondRequestID, secondClientID string
-	
+
 	// First middleware to capture IDs
 	r.Use(func(c *gin.Context) {
 		c.Next()
 		firstRequestID = c.Writer.Header().Get(headerRequestID)
 		firstClientID = c.Writer.Header().Get(headerClientID)
 	})
-	
+
 	r.Use(RequestIDMiddleware())
-	
+
 	// Second middleware to capture IDs
 	r.Use(func(c *gin.Context) {
 		secondRequestID = c.Writer.Header().Get(headerRequestID)
 		secondClientID = c.Writer.Header().Get(headerClientID)
 		c.Next()
 	})
-	
+
 	r.GET("/test", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -385,17 +385,17 @@ func TestRequestIDMiddleware_ConcurrentRequests(t *testing.T) {
 			}
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
-			
+
 			if w.Code != http.StatusOK {
 				t.Errorf("want 200, got %d", w.Code)
 			}
-			
+
 			requestID := w.Header().Get(headerRequestID)
 			clientID := w.Header().Get(headerClientID)
 			if requestID == "" || clientID == "" {
 				t.Errorf("IDs should be set")
 			}
-			
+
 			done <- true
 		}(i)
 	}

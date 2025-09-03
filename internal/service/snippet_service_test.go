@@ -320,7 +320,7 @@ func TestGetSnippetByID_NoExpiry(t *testing.T) {
 		Content:   "content",
 		Tags:      []string{"permanent"},
 		CreatedAt: now.Add(-time.Hour * 24 * 365), // 1 year old
-		ExpiresAt: time.Time{},                     // no expiry
+		ExpiresAt: time.Time{},                    // no expiry
 	}
 	repo := &fakeRepo{findByID: map[string]domain.Snippet{
 		"no-exp": snippet,
