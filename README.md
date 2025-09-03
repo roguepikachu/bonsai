@@ -1,24 +1,24 @@
-
 # Bonsai
 
 <p align="center">
   <img src="img/bonsai.png" alt="Bonsai logo" width="300"/>
 </p>
 
-Bonsai is a fast, lightweight, and scalable snippet store written in Go. It lets you create short text snippets with optional expiry and tags.
+Bonsai is a fast, lightweight text snippet sharing service written in Go. Create and share text/code snippets with optional expiration and tags.
 
 ## Features
-- Simple and clean API for creating and managing short URLs
-- In-memory and persistent storage options
-- Expiry and cache management
-- Analytics and rate limiting
-- Real-time pub/sub updates
-- Stampede guard for high-traffic protection
+- Simple REST API for managing text snippets
+- Optional expiration (auto-delete after specified time)
+- Tag-based organization and search
+- Redis caching for fast retrieval
+- PostgreSQL persistent storage
+- Thread-safe concurrent handling
+- Kubernetes-ready health probes
 
 ## Getting Started
 
 ### Prerequisites
-- Go 1.22 or higher
+- Go 1.23 or higher
 - Docker (for local Redis/Postgres)
 
 ### Quickstart (local)
@@ -77,15 +77,12 @@ make docker-build
 Run `make help` to see all available commands and descriptions. The Makefile is the source of truth for command docs.
 
 ## Documentation
-See the [docs/](docs/) folder for detailed API documentation, architecture, and contribution guidelines.
-
-## Contributing
-Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
-
-See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for more information.
-
-## License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+- [API Reference](docs/API.md) - Endpoints and examples
+- [Architecture](docs/ARCHITECTURE.md) - System design
+- [Use Cases](docs/USE_CASES.md) - Real-world examples
+- [Testing](docs/TESTING.md) - Test strategy
+- [Roadmap](docs/ROADMAP.md) - Future features
+- [Contributing](docs/CONTRIBUTING.md) - Contribution guide
 
 ## Configuration
 
@@ -98,3 +95,11 @@ Copy `.env.example` to `.env` and adjust as needed. Key variables:
 - AUTO_MIGRATE: if true, creates the minimal schema on startup
 - LOG_LEVEL: trace|debug|info|warn|error (default debug)
 - LOG_FORMAT: text|json (default text)
+
+## Contributing
+Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
+
+See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for more information.
+
+## License
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

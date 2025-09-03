@@ -1,8 +1,14 @@
-# API.md
+# API Documentation
 
-All endpoints are JSON only and versioned under `/v1`.
+## Overview
 
-Error responses follow this envelope:
+Bonsai provides a REST API for creating and managing text/code snippets. Think of it as a programmatic Pastebin or GitHub Gist service.
+
+**Base URL**: `http://localhost:8080/v1`
+
+**Content Type**: All endpoints accept and return `application/json`
+
+## Error Response Format
 
 ```json
 {
@@ -36,17 +42,23 @@ Checks service health.
 
 **POST /v1/snippets**
 
-Create a new snippet with optional expiry and tags.
+Create a new text/code snippet with optional expiry and tags. Perfect for sharing code, configs, logs, or any text content.
 
-**Request**
+**Request Body**
 
 ```json
 {
-  "content": "hello world",
-  "expires_in": 86400,
-  "tags": ["demo", "test"]
+  "content": "def hello():\n    print('Hello World')",
+  "expires_in": 86400,  // Optional: seconds until expiry (max 2592000 = 30 days)
+  "tags": ["python", "example"]  // Optional: for categorization
 }
 ```
+
+**Use Cases**:
+- Share code snippets in team chats
+- Temporarily share configuration files
+- Store debug logs or stack traces
+- Create reusable documentation snippets
 
 **201 Response**
 
@@ -70,13 +82,13 @@ Create a new snippet with optional expiry and tags.
 
 **GET /v1/snippets**
 
-List all snippets with pagination and optional tag filter.
+List snippets with pagination and optional tag filtering. Useful for browsing available snippets or finding specific categories.
 
-**Query Params**
+**Query Parameters**
 
-* `page` (default 1)
-* `limit` (default 20)
-* `tag` (optional filter)
+* `page` (integer, default 1) - Page number
+* `limit` (integer, default 20, max 100) - Items per page
+* `tag` (string, optional) - Filter by tag (e.g., "python", "config")
 
 **200 Response**
 
@@ -95,29 +107,30 @@ List all snippets with pagination and optional tag filter.
 
 ### 4. Get Snippet by ID
 
-**GET /v1/snippets/\:id**
+**GET /v1/snippets/:id**
 
-Fetches snippet content. Uses cache-aside in Redis.
+Retrieve the full content of a snippet. Uses Redis cache for fast retrieval of frequently accessed snippets.
 
 **200 Response**
 
 ```json
 {
   "id": "abc123",
-  "content": "hello world",
+  "content": "def hello():\n    print('Hello World')",
   "created_at": "2025-08-21T15:04:05Z",
-  "expires_at": null
+  "expires_at": null,
+  "tags": ["python", "example"]
 }
 ```
 
-**Headers**
+**Response Headers**
 
-* `X-Cache: HIT` or `MISS`
+* `X-Cache: HIT` or `MISS` - Indicates if content was served from cache
 
-**Errors**
+**Error Responses**
 
-* 404 if not found
-* 410 if expired
+* `404 Not Found` - Snippet doesn't exist
+* `410 Gone` - Snippet has expired
 
 ---
 
