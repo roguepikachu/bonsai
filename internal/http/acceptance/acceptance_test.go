@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,6 +38,15 @@ var (
 
 // TestMain orchestrates setup/teardown for E2E tests
 func TestMain(m *testing.M) {
+	// Parse flags to check for -short
+	flag.Parse()
+
+	// Skip acceptance tests when running with -short flag (unit tests)
+	if testing.Short() {
+		fmt.Println("Skipping acceptance tests in short mode")
+		os.Exit(0)
+	}
+
 	// Start services
 	if err := startServices(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start services: %v\n", err)
@@ -68,7 +78,7 @@ func TestMain(m *testing.M) {
 }
 
 func startServices() error {
-	cmd := exec.Command("make", "dev-up")
+	cmd := exec.Command("make", "services")
 	cmd.Dir = "../../../" // Set working directory to project root
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -78,9 +88,9 @@ func startServices() error {
 }
 
 func stopServices() {
-	cmd := exec.Command("make", "dev-down")
+	cmd := exec.Command("make", "services-stop")
 	cmd.Dir = "../../../" // Set working directory to project root
-	cmd.Run()
+	_ = cmd.Run()         // Ignore error, best effort cleanup
 }
 
 func waitForServices() error {
@@ -104,10 +114,10 @@ func waitForServices() error {
 	for i := 0; i < 30; i++ {
 		rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 1})
 		if err := rdb.Ping(context.Background()).Err(); err == nil {
-			rdb.Close()
+			_ = rdb.Close() // Best effort cleanup
 			break
 		}
-		rdb.Close()
+		_ = rdb.Close() // Best effort cleanup
 		time.Sleep(time.Second)
 		if i == 29 {
 			return fmt.Errorf("Redis not ready after 30 seconds")
@@ -167,11 +177,11 @@ func startTestServer() error {
 	for i := 0; i < 10; i++ {
 		resp, err := client.Get(baseURL + "/v1/health")
 		if err == nil && resp.StatusCode == http.StatusOK {
-			resp.Body.Close()
+			_ = resp.Body.Close() // Best effort cleanup
 			return nil
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close() // Best effort cleanup
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -209,7 +219,7 @@ func stopTestServer() {
 	if testServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		testServer.Shutdown(ctx)
+		_ = testServer.Shutdown(ctx) // Best effort cleanup
 	}
 }
 
@@ -229,7 +239,7 @@ func cleanDatabase(t *testing.T) {
 
 	// Clean Redis
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 1})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }() // Best effort cleanup
 	rdb.FlushDB(context.Background())
 }
 
@@ -371,7 +381,7 @@ func getSnippetsFromDatabase(t *testing.T, limit int) []domain.Snippet {
 func verifySnippetInRedis(t *testing.T, id string) bool {
 	t.Helper()
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 1})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }() // Best effort cleanup
 
 	key := fmt.Sprintf("snippet:%s", id)
 	exists, err := rdb.Exists(context.Background(), key).Result()
@@ -391,33 +401,13 @@ func verifySnippetNotInRedis(t *testing.T, id string) {
 func getRedisKeyCount(t *testing.T, pattern string) int {
 	t.Helper()
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 1})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }() // Best effort cleanup
 
 	keys, err := rdb.Keys(context.Background(), pattern).Result()
 	if err != nil {
 		t.Fatalf("Failed to get Redis keys: %v", err)
 	}
 	return len(keys)
-}
-
-func verifyRedisKeyTTL(t *testing.T, key string, expectedTTL time.Duration, tolerance time.Duration) {
-	t.Helper()
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 1})
-	defer rdb.Close()
-
-	ttl, err := rdb.TTL(context.Background(), key).Result()
-	if err != nil {
-		t.Fatalf("Failed to get TTL for key %s: %v", key, err)
-	}
-
-	if ttl == -1 {
-		t.Errorf("Key %s has no expiration set", key)
-		return
-	}
-
-	if ttl < expectedTTL-tolerance || ttl > expectedTTL+tolerance {
-		t.Errorf("TTL for key %s is %v, expected %v (±%v)", key, ttl, expectedTTL, tolerance)
-	}
 }
 
 func Test_HealthEndpoints(t *testing.T) {
@@ -573,7 +563,7 @@ func Test_SnippetCRUD(t *testing.T) {
 
 	// Verify non-existent snippet is not in database
 	verifySnippetNotInDatabase(t, "non-existent")
-	
+
 	// Verify non-existent snippet is not in Redis
 	verifySnippetNotInRedis(t, "non-existent")
 }
@@ -782,7 +772,7 @@ func Test_HeaderPropagation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // Best effort cleanup
 
 	if resp.Header.Get("X-Request-ID") != "test-request-123" {
 		t.Errorf("Expected X-Request-ID to be echoed back")
@@ -797,7 +787,7 @@ func Test_HeaderPropagation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }() // Best effort cleanup
 
 	if resp2.Header.Get("X-Request-ID") == "" {
 		t.Error("Expected auto-generated X-Request-ID")
@@ -894,7 +884,7 @@ func Test_CacheInvalidation(t *testing.T) {
 	// Cache list queries
 	var list map[string]any
 	doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets?page=1&limit=10", nil, &list)
-	
+
 	// Verify list cache keys exist
 	listCacheCount := getRedisKeyCount(t, "list:*")
 	if listCacheCount == 0 {
@@ -1185,7 +1175,7 @@ func Test_RedisFailover(t *testing.T) {
 
 	// Manually clear Redis cache to simulate Redis failure/flush
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 1})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }() // Best effort cleanup
 	rdb.FlushDB(context.Background())
 
 	// Verify cache is cleared
@@ -1295,7 +1285,7 @@ func Test_PerformanceAndLoad(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping performance test in short mode")
 	}
-	
+
 	cleanDatabase(t)
 
 	// Performance test: Measure response times for various operations
@@ -1313,16 +1303,16 @@ func Test_PerformanceAndLoad(t *testing.T) {
 		var created struct {
 			ID string `json:"id"`
 		}
-		
+
 		start := time.Now()
 		code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
 		createTime := time.Since(start)
-		
+
 		if code != http.StatusCreated {
 			t.Errorf("Create request %d failed with code %d", i, code)
 			continue
 		}
-		
+
 		createdIDs = append(createdIDs, created.ID)
 		createTimes = append(createTimes, createTime)
 	}
@@ -1338,41 +1328,41 @@ func Test_PerformanceAndLoad(t *testing.T) {
 		// Use random snippet ID to test various cache scenarios
 		snippetID := createdIDs[i%len(createdIDs)]
 		var retrieved map[string]any
-		
+
 		start := time.Now()
 		code, _ := doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets/"+snippetID, nil, &retrieved)
 		readTime := time.Since(start)
-		
+
 		if code != http.StatusOK {
 			t.Errorf("Read request %d failed with code %d", i, code)
 			continue
 		}
-		
+
 		readTimes = append(readTimes, readTime)
 	}
 
 	// Test list performance with various pagination parameters
 	listParams := []string{
 		"?page=1&limit=10",
-		"?page=1&limit=20", 
+		"?page=1&limit=20",
 		"?page=5&limit=10",
 		"?tag=performance",
 		"?tag=load-test",
 	}
-	
+
 	for i := 0; i < 20; i++ { // 4 requests per param type
 		param := listParams[i%len(listParams)]
 		var list map[string]any
-		
+
 		start := time.Now()
 		code, _ := doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets"+param, nil, &list)
 		listTime := time.Since(start)
-		
+
 		if code != http.StatusOK {
 			t.Errorf("List request %d failed with code %d", i, code)
 			continue
 		}
-		
+
 		listTimes = append(listTimes, listTime)
 	}
 
@@ -1410,7 +1400,7 @@ func Test_PerformanceAndLoad(t *testing.T) {
 	if cacheKeyCount == 0 {
 		t.Error("Expected some snippets to be cached")
 	}
-	
+
 	cacheHitRatio := float64(cacheKeyCount) / float64(len(createdIDs))
 	t.Logf("Cache hit ratio: %.2f%% (%d cached out of %d total)", cacheHitRatio*100, cacheKeyCount, len(createdIDs))
 }
@@ -1431,11 +1421,11 @@ func calculatePercentile(durations []time.Duration, percentile int) time.Duratio
 	if len(durations) == 0 {
 		return 0
 	}
-	
+
 	// Simple percentile calculation (sort and pick index)
 	sorted := make([]time.Duration, len(durations))
 	copy(sorted, durations)
-	
+
 	// Simple bubble sort for small datasets
 	for i := 0; i < len(sorted); i++ {
 		for j := 0; j < len(sorted)-1-i; j++ {
@@ -1444,7 +1434,7 @@ func calculatePercentile(durations []time.Duration, percentile int) time.Duratio
 			}
 		}
 	}
-	
+
 	index := (len(sorted) * percentile) / 100
 	if index >= len(sorted) {
 		index = len(sorted) - 1
@@ -1456,11 +1446,11 @@ func calculateMax(durations []time.Duration) time.Duration {
 	if len(durations) == 0 {
 		return 0
 	}
-	max := durations[0]
+	maxDuration := durations[0]
 	for _, d := range durations {
-		if d > max {
-			max = d
+		if d > maxDuration {
+			maxDuration = d
 		}
 	}
-	return max
+	return maxDuration
 }
