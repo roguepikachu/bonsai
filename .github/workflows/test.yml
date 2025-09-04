@@ -93,7 +93,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         ports:
-          - 5432:5432
+          - 5432
       
       redis:
         image: redis:7-alpine
@@ -103,7 +103,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         ports:
-          - 6379:6379
+          - 6379
 
     steps:
     - uses: actions/checkout@v4
@@ -130,16 +130,16 @@ jobs:
       run: make test-integration
       env:
         CI: true
-        DATABASE_URL: postgres://bonsai:bonsai@localhost:5432/bonsai_test?sslmode=disable
-        REDIS_URL: redis://localhost:6379
+        DATABASE_URL: postgres://bonsai:bonsai@localhost:${{ job.services.postgres.ports[5432] }}/bonsai_test?sslmode=disable
+        REDIS_URL: redis://localhost:${{ job.services.redis.ports[6379] }}
 
     - name: Cleanup test resources
       if: always()
       run: |
         # Clean up test data from PostgreSQL
-        PGPASSWORD=bonsai psql -h localhost -U bonsai -d bonsai_test -c "TRUNCATE TABLE IF EXISTS snippets CASCADE;" || true
+        PGPASSWORD=bonsai psql -h localhost -p ${{ job.services.postgres.ports[5432] }} -U bonsai -d bonsai_test -c "TRUNCATE TABLE IF EXISTS snippets CASCADE;" || true
         # Clean up Redis cache
-        redis-cli -h localhost FLUSHALL || true
+        redis-cli -h localhost -p ${{ job.services.redis.ports[6379] }} FLUSHALL || true
         # Clean up test artifacts
         rm -f coverage*.out coverage*.html
         go clean -testcache
@@ -166,7 +166,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         ports:
-          - 5432:5432
+          - 5432
       
       redis:
         image: redis:7-alpine
@@ -176,7 +176,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         ports:
-          - 6380:6379
+          - 6379
     
     steps:
     - uses: actions/checkout@v4
@@ -203,19 +203,19 @@ jobs:
       run: make test-acceptance
       env:
         CI: true
-        DATABASE_URL: postgres://postgres:postgres@localhost:5432/bonsai?sslmode=disable
-        REDIS_URL: redis://localhost:6380
-        REDIS_PORT: 6380
+        DATABASE_URL: postgres://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/bonsai?sslmode=disable
+        REDIS_URL: redis://localhost:${{ job.services.redis.ports[6379] }}
+        REDIS_PORT: ${{ job.services.redis.ports[6379] }}
         BONSAI_PORT: 8080
 
     - name: Cleanup test resources
       if: always()
       run: |
         # Clean up test databases
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "DROP DATABASE IF EXISTS bonsai_test;" || true
-        PGPASSWORD=postgres psql -h localhost -U postgres -d bonsai -c "TRUNCATE TABLE IF EXISTS snippets CASCADE;" || true
+        PGPASSWORD=postgres psql -h localhost -p ${{ job.services.postgres.ports[5432] }} -U postgres -c "DROP DATABASE IF EXISTS bonsai_test;" || true
+        PGPASSWORD=postgres psql -h localhost -p ${{ job.services.postgres.ports[5432] }} -U postgres -d bonsai -c "TRUNCATE TABLE IF EXISTS snippets CASCADE;" || true
         # Clean up Redis cache  
-        redis-cli -h localhost -p 6380 FLUSHALL || true
+        redis-cli -h localhost -p ${{ job.services.redis.ports[6379] }} FLUSHALL || true
         # Clean up test artifacts
         rm -f coverage*.out coverage*.html
         go clean -testcache

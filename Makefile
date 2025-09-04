@@ -45,12 +45,13 @@ build: ## Build the binary
 install: build ## Install binary to $GOPATH/bin
 	$(GO) install ./cmd/api
 
-clean: ## Clean up built artifacts and test resources
+clean: ## Clean up built artifacts, test resources, and stop services
 	@echo "$(COLOR_YELLOW)Cleaning up...$(COLOR_RESET)"
 	rm -f $(BINARY)
 	rm -f coverage*.out coverage*.html
 	$(GO) clean
 	@$(MAKE) test-cleanup
+	@$(MAKE) services-stop
 
 ##@ Services
 .PHONY: services services-stop services-restart logs
@@ -84,24 +85,22 @@ test-unit: ## Run unit tests (fast, no external services)
 
 test-integration: ## Run integration tests (requires services)
 	@echo "$(COLOR_BLUE)Running integration tests...$(COLOR_RESET)"
-	@echo "$(COLOR_BLUE)Starting database services...$(COLOR_RESET)"
-	@$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) up -d
+	@$(MAKE) services
 	@trap '$(MAKE) test-cleanup' EXIT; \
 		$(GO) test -tags=integration -race $(PKG) && \
 		echo "$(COLOR_GREEN)Integration tests completed!$(COLOR_RESET)"
 
 test-acceptance: ## Run full acceptance tests (auto-manages services)
 	@echo "$(COLOR_BLUE)Running acceptance tests...$(COLOR_RESET)"
-	@echo "$(COLOR_BLUE)Starting database services...$(COLOR_RESET)"
-	@$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) up -d
+	@$(MAKE) services
 	@trap '$(MAKE) test-cleanup' EXIT; \
 		$(GO) test -tags=acceptance -race -v ./internal/http/acceptance && \
 		echo "$(COLOR_GREEN)Acceptance tests completed!$(COLOR_RESET)"
 
-test-cleanup: ## Clean up test resources (containers, volumes, test data)
+test-cleanup: ## Clean up test resources (test data and artifacts only)
 	@echo "$(COLOR_YELLOW)Cleaning up test resources...$(COLOR_RESET)"
-	@$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) down -v --remove-orphans 2>/dev/null || true
-	@docker volume prune -f 2>/dev/null || true
+	@docker exec postgres psql -U postgres -d bonsai_test -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
+	@docker exec redis redis-cli FLUSHALL 2>/dev/null || true
 	@rm -f coverage*.out coverage*.html 2>/dev/null || true
 	@echo "$(COLOR_GREEN)Test cleanup completed!$(COLOR_RESET)"
 

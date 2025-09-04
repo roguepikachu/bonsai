@@ -37,7 +37,7 @@ var (
 
 func init() {
 	// Parse Redis address from URL
-	redisURL := getEnvOrDefault("REDIS_URL", "redis://localhost:6380/1")
+	redisURL := getEnvOrDefault("REDIS_URL", "redis://localhost:6379/1")
 	if strings.HasPrefix(redisURL, "redis://") {
 		addr := strings.TrimPrefix(redisURL, "redis://")
 		if idx := strings.Index(addr, "/"); idx > 0 {
@@ -46,7 +46,7 @@ func init() {
 			testRedisAddr = addr
 		}
 	} else {
-		testRedisAddr = "localhost:6380"
+		testRedisAddr = "localhost:6379"
 	}
 	// Handle CI environment with different Redis port
 	if os.Getenv("CI") == ciTrue && os.Getenv("REDIS_PORT") != "" {
@@ -134,7 +134,7 @@ func stopServices() {
 
 func waitForServices() error {
 	// Wait for PostgreSQL
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 60; i++ { // Increase timeout to 60 seconds
 		pool, err := pgxpool.New(context.Background(), testDatabaseURL)
 		if err == nil {
 			if err := pool.Ping(context.Background()); err == nil {
@@ -144,8 +144,8 @@ func waitForServices() error {
 			pool.Close()
 		}
 		time.Sleep(time.Second)
-		if i == 29 {
-			return fmt.Errorf("PostgreSQL not ready after 30 seconds")
+		if i == 59 {
+			return fmt.Errorf("PostgreSQL not ready after 60 seconds")
 		}
 	}
 
