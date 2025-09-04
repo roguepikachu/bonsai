@@ -98,7 +98,7 @@ test-all: ## Run all tests (unit + integration + acceptance) with cleanup
 
 test-unit: ## Run unit tests (fast, no external services)
 	@echo "$(COLOR_BLUE)Running unit tests...$(COLOR_RESET)"
-	$(GO) test -race -short $(PKG)
+	$(GO) test -race -short -coverprofile=coverage.out -covermode=atomic $(PKG)
 
 test-integration: ## Run integration tests (requires services)
 	@echo "$(COLOR_BLUE)Running integration tests...$(COLOR_RESET)"
@@ -107,7 +107,7 @@ ifndef CI
 	@$(MAKE) services
 endif
 	@trap '$(MAKE) test-cleanup' EXIT; \
-		$(GO) test -tags=integration -race $(PKG) && \
+		$(GO) test -tags=integration -race -coverprofile=coverage-integration.out -covermode=atomic $(PKG) && \
 		echo "$(COLOR_GREEN)Integration tests completed!$(COLOR_RESET)"
 
 test-acceptance: ## Run full acceptance tests (auto-manages services)

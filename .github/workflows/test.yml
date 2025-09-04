@@ -65,17 +65,19 @@ jobs:
     - name: Run unit tests with coverage
       run: make test-unit
 
+    - name: Upload unit test coverage
+      if: always()  # Upload even if tests fail
+      uses: actions/upload-artifact@v4
+      with:
+        name: unit-coverage
+        path: coverage.out
+        if-no-files-found: warn  # Don't fail if coverage file doesn't exist
+
     - name: Cleanup test artifacts
       if: always()
       run: |
         rm -f coverage*.out coverage*.html
         go clean -testcache
-
-    - name: Upload unit test coverage
-      uses: actions/upload-artifact@v4
-      with:
-        name: unit-coverage
-        path: coverage.out
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -133,6 +135,14 @@ jobs:
         DATABASE_URL: postgres://bonsai:bonsai@localhost:${{ job.services.postgres.ports[5432] }}/bonsai_test?sslmode=disable
         REDIS_URL: redis://localhost:${{ job.services.redis.ports[6379] }}
 
+    - name: Upload integration test coverage
+      if: always()  # Upload even if tests fail
+      uses: actions/upload-artifact@v4
+      with:
+        name: integration-coverage
+        path: coverage-integration.out
+        if-no-files-found: warn  # Don't fail if coverage file doesn't exist
+
     - name: Cleanup test resources
       if: always()
       run: |
@@ -143,12 +153,6 @@ jobs:
         # Clean up test artifacts
         rm -f coverage*.out coverage*.html
         go clean -testcache
-
-    - name: Upload integration test coverage
-      uses: actions/upload-artifact@v4
-      with:
-        name: integration-coverage
-        path: coverage-integration.out
 
   acceptance-tests:
     runs-on: ubuntu-latest
@@ -226,6 +230,7 @@ jobs:
   coverage-report:
     runs-on: ubuntu-latest
     needs: [lint, unit-tests, integration-tests]
+    if: success() || failure()  # Run even if some jobs fail, but not if cancelled
     
     steps:
     - uses: actions/checkout@v4
@@ -237,19 +242,22 @@ jobs:
 
     - name: Download unit test coverage
       uses: actions/download-artifact@v4
+      continue-on-error: true  # Continue if artifact doesn't exist
       with:
         name: unit-coverage
 
     - name: Download integration test coverage
       uses: actions/download-artifact@v4
+      continue-on-error: true  # Continue if artifact doesn't exist
       with:
         name: integration-coverage
 
     - name: Merge coverage reports
       run: |
         echo "mode: atomic" > coverage-merged.out
-        tail -n +2 coverage.out >> coverage-merged.out
-        tail -n +2 coverage-integration.out >> coverage-merged.out
+        # Only merge files that exist
+        [ -f coverage.out ] && tail -n +2 coverage.out >> coverage-merged.out || echo "No unit test coverage"
+        [ -f coverage-integration.out ] && tail -n +2 coverage-integration.out >> coverage-merged.out || echo "No integration test coverage"
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
@@ -260,7 +268,13 @@ jobs:
         fail_ci_if_error: false
 
     - name: Generate coverage report
-      run: go tool cover -html=coverage-merged.out -o coverage.html
+      run: |
+        if [ -s coverage-merged.out ] && grep -v "^mode: atomic$" coverage-merged.out > /dev/null; then
+          go tool cover -html=coverage-merged.out -o coverage.html
+        else
+          echo "No coverage data available to generate report"
+          echo "<html><body>No coverage data available</body></html>" > coverage.html
+        fi
 
     - name: Upload coverage report as artifact
       uses: actions/upload-artifact@v4
