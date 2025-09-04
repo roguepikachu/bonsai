@@ -18,6 +18,16 @@ import (
 	"github.com/roguepikachu/bonsai/internal/service"
 )
 
+// Constants for commonly used test strings
+const (
+	testContentType    = "application/json"
+	testContent        = "test content"
+	updatedContent     = "updated"
+	testID             = "test-id"
+	testBodyDefault    = `{"content":"test","expires_in":60,"tags":[]}`
+	testBodyNewContent = `{"content":"new content","expires_in":60,"tags":[]}`
+)
+
 type mockSnippetService struct {
 	list        []domain.Snippet
 	byID        map[string]domain.Snippet
@@ -229,7 +239,7 @@ func TestSnippetCreate_OK(t *testing.T) {
 	body := `{"content":"hi","expires_in":90,"tags":["t1","t2"]}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/snippets", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d", w.Code)
@@ -246,7 +256,7 @@ func TestSnippetCreate_InvalidJSON(t *testing.T) {
 	body := `{"content":"test", invalid json}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/snippets", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", w.Code)
@@ -263,7 +273,7 @@ func TestSnippetCreate_EmptyContent(t *testing.T) {
 	body := `{"content":"","expires_in":60,"tags":[]}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/snippets", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", w.Code)
@@ -283,7 +293,7 @@ func TestSnippetCreate_NoExpiry(t *testing.T) {
 	body := `{"content":"no expiry","expires_in":0,"tags":["permanent"]}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/snippets", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d", w.Code)
@@ -305,10 +315,10 @@ func TestSnippetCreate_ServiceError(t *testing.T) {
 	r := gin.New()
 	r.POST("/v1/snippets", h.Create)
 
-	body := `{"content":"test","expires_in":60,"tags":[]}`
+	body := testBodyDefault
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/snippets", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("want 500, got %d", w.Code)
@@ -318,12 +328,12 @@ func TestSnippetCreate_ServiceError(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
-	if errObj, ok := resp["error"].(map[string]interface{}); ok {
-		if errObj["code"] != "internal_error" {
-			t.Fatalf("expected error code internal_error, got %v", errObj["code"])
-		}
-	} else {
+	errObj, ok := resp["error"].(map[string]interface{})
+	if !ok {
 		t.Fatalf("expected error object in response")
+	}
+	if errObj["code"] != "internal_error" {
+		t.Fatalf("expected error code internal_error, got %v", errObj["code"])
 	}
 }
 
@@ -338,7 +348,7 @@ func TestSnippetCreate_LargeContent(t *testing.T) {
 	body := fmt.Sprintf(`{"content":"%s","expires_in":3600,"tags":["large"]}`, largeContent)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/snippets", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d", w.Code)
@@ -637,9 +647,9 @@ func TestHandler_ConcurrentRequests(t *testing.T) {
 
 	// Concurrent create
 	go func() {
-		body := `{"content":"test","expires_in":60,"tags":[]}`
+		body := testBodyDefault
 		req := httptest.NewRequest(http.MethodPost, "/v1/snippets", bytes.NewBufferString(body))
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", testContentType)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		done <- true
@@ -708,7 +718,7 @@ func TestSnippetUpdate_OK(t *testing.T) {
 	body := `{"content":"updated content","expires_in":3600,"tags":["updated","new"]}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/update-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
@@ -733,10 +743,10 @@ func TestSnippetUpdate_NotFound(t *testing.T) {
 	r := gin.New()
 	r.PUT("/v1/snippets/:id", h.Update)
 
-	body := `{"content":"new content","expires_in":60,"tags":[]}`
+	body := testBodyNewContent
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/nonexistent", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("want 404, got %d", w.Code)
@@ -753,7 +763,7 @@ func TestSnippetUpdate_InvalidJSON(t *testing.T) {
 	body := `{"content":"test", invalid json}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", w.Code)
@@ -774,8 +784,8 @@ func TestSnippetUpdate_EmptyContent(t *testing.T) {
 
 	body := `{"content":"","expires_in":60,"tags":[]}`
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/test-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/"+testID, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", w.Code)
@@ -791,10 +801,10 @@ func TestSnippetUpdate_ExpiredSnippet(t *testing.T) {
 	r := gin.New()
 	r.PUT("/v1/snippets/:id", h.Update)
 
-	body := `{"content":"new content","expires_in":60,"tags":[]}`
+	body := testBodyNewContent
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/expired", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusGone {
 		t.Fatalf("want 410, got %d", w.Code)
@@ -811,10 +821,10 @@ func TestSnippetUpdate_ServiceError(t *testing.T) {
 	r := gin.New()
 	r.PUT("/v1/snippets/:id", h.Update)
 
-	body := `{"content":"test","expires_in":60,"tags":[]}`
+	body := testBodyDefault
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/error-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("want 500, got %d", w.Code)
@@ -824,12 +834,12 @@ func TestSnippetUpdate_ServiceError(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
-	if errObj, ok := resp["error"].(map[string]interface{}); ok {
-		if errObj["code"] != "internal_error" {
-			t.Fatalf("expected error code internal_error, got %v", errObj["code"])
-		}
-	} else {
+	errObj, ok := resp["error"].(map[string]interface{})
+	if !ok {
 		t.Fatalf("expected error object in response")
+	}
+	if errObj["code"] != "internal_error" {
+		t.Fatalf("expected error code internal_error, got %v", errObj["code"])
 	}
 }
 
@@ -848,7 +858,7 @@ func TestSnippetUpdate_NoExpiry(t *testing.T) {
 	body := `{"content":"updated with no expiry","expires_in":0,"tags":["permanent"]}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/no-exp-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
@@ -879,7 +889,7 @@ func TestSnippetUpdate_LargeContent(t *testing.T) {
 	body := fmt.Sprintf(`{"content":"%s","expires_in":3600,"tags":["large"]}`, largeContent)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/large-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
@@ -905,10 +915,10 @@ func TestSnippetUpdate_PreservesCreatedAt(t *testing.T) {
 	r := gin.New()
 	r.PUT("/v1/snippets/:id", h.Update)
 
-	body := `{"content":"new content","expires_in":60,"tags":[]}`
+	body := testBodyNewContent
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/preserve-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
@@ -931,10 +941,10 @@ func TestSnippetUpdate_MissingID(t *testing.T) {
 	r := gin.New()
 	r.PUT("/v1/snippets/:id", h.Update)
 
-	body := `{"content":"test","expires_in":60,"tags":[]}`
+	body := testBodyDefault
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	// Should return 404 as the route won't match without ID
 	if w.Code != http.StatusNotFound {
@@ -952,10 +962,10 @@ func TestSnippetUpdate_EmptyStringID(t *testing.T) {
 		h.Update(c)
 	})
 
-	body := `{"content":"test","expires_in":60,"tags":[]}`
+	body := testBodyDefault
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets//update", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400 for empty string ID, got %d", w.Code)
@@ -974,10 +984,10 @@ func TestSnippetUpdate_VeryLongID(t *testing.T) {
 	r := gin.New()
 	r.PUT("/v1/snippets/:id", h.Update)
 
-	body := `{"content":"updated","expires_in":60,"tags":[]}`
+	body := fmt.Sprintf(`{"content":"%s","expires_in":60,"tags":[]}`, updatedContent)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/"+strings.Repeat("a", 1000), bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200 for long ID, got %d", w.Code)
@@ -997,10 +1007,10 @@ func TestSnippetUpdate_SpecialCharacterID(t *testing.T) {
 	r := gin.New()
 	r.PUT("/v1/snippets/:id", h.Update)
 
-	body := `{"content":"updated","expires_in":60,"tags":[]}`
+	body := fmt.Sprintf(`{"content":"%s","expires_in":60,"tags":[]}`, updatedContent)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/"+url.QueryEscape(specialID), bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200 for special character ID, got %d", w.Code)
@@ -1020,10 +1030,10 @@ func TestSnippetUpdate_UnicodeID(t *testing.T) {
 	r := gin.New()
 	r.PUT("/v1/snippets/:id", h.Update)
 
-	body := `{"content":"updated","expires_in":60,"tags":[]}`
+	body := fmt.Sprintf(`{"content":"%s","expires_in":60,"tags":[]}`, updatedContent)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/"+unicodeID, bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200 for unicode ID, got %d", w.Code)
@@ -1046,7 +1056,7 @@ func TestSnippetUpdate_MaxContentLength(t *testing.T) {
 	body := fmt.Sprintf(`{"content":"%s","expires_in":60,"tags":["max"]}`, maxContent)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/max-content-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200 for max content length, got %d", w.Code)
@@ -1069,7 +1079,7 @@ func TestSnippetUpdate_ExceedMaxContentLength(t *testing.T) {
 	body := fmt.Sprintf(`{"content":"%s","expires_in":60,"tags":[]}`, exceedContent)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/exceed-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400 for content exceeding limit, got %d", w.Code)
@@ -1091,7 +1101,7 @@ func TestSnippetUpdate_MaxExpiresIn(t *testing.T) {
 	body := `{"content":"test","expires_in":2592000,"tags":[]}` // 30 days in seconds (max)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/max-exp-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200 for max expires_in, got %d", w.Code)
@@ -1113,7 +1123,7 @@ func TestSnippetUpdate_ExceedMaxExpiresIn(t *testing.T) {
 	body := `{"content":"test","expires_in":2592001,"tags":[]}` // One second over max
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/exceed-exp-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400 for expires_in exceeding limit, got %d", w.Code)
@@ -1135,7 +1145,7 @@ func TestSnippetUpdate_NegativeExpiresIn(t *testing.T) {
 	body := `{"content":"test","expires_in":-1,"tags":[]}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/neg-exp-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400 for negative expires_in, got %d", w.Code)
@@ -1155,10 +1165,10 @@ func TestSnippetUpdate_EmptyTagsArray(t *testing.T) {
 	r := gin.New()
 	r.PUT("/v1/snippets/:id", h.Update)
 
-	body := `{"content":"updated","expires_in":60,"tags":[]}`
+	body := fmt.Sprintf(`{"content":"%s","expires_in":60,"tags":[]}`, updatedContent)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/empty-tags-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200 for empty tags array, got %d", w.Code)
@@ -1189,7 +1199,7 @@ func TestSnippetUpdate_MissingTagsField(t *testing.T) {
 	body := `{"content":"updated","expires_in":60}` // No tags field
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/missing-tags-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200 for missing tags field, got %d", w.Code)
@@ -1200,9 +1210,7 @@ func TestSnippetUpdate_MissingTagsField(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 	// Should be nil/empty when tags field is omitted
-	if resp.Tags == nil {
-		// This is acceptable
-	} else if len(resp.Tags) != 0 {
+	if len(resp.Tags) != 0 {
 		t.Fatalf("expected nil or empty tags when field omitted, got %v", resp.Tags)
 	}
 }
@@ -1223,7 +1231,7 @@ func TestSnippetUpdate_NullTagsField(t *testing.T) {
 	body := `{"content":"updated","expires_in":60,"tags":null}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/null-tags-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200 for null tags, got %d", w.Code)
@@ -1252,7 +1260,7 @@ func TestSnippetUpdate_LargeNumberOfTags(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/many-tags-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200 for many tags, got %d", w.Code)
@@ -1275,7 +1283,7 @@ func TestSnippetUpdate_UnicodeContent(t *testing.T) {
 	body := fmt.Sprintf(`{"content":"%s","expires_in":60,"tags":["unicode","test"]}`, unicodeContent)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/unicode-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200 for unicode content, got %d", w.Code)
@@ -1290,72 +1298,49 @@ func TestSnippetUpdate_UnicodeContent(t *testing.T) {
 	}
 }
 
-func TestSnippetUpdate_ContentWithNewlines(t *testing.T) {
+// testUpdateWithSpecialContent tests updating a snippet with special content characters
+func testUpdateWithSpecialContent(t *testing.T, snippetID, content, testName string) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	existingSnippet := domain.Snippet{
-		ID:        "newline-id",
+		ID:        snippetID,
 		Content:   "old content",
 		CreatedAt: time.Now(),
 	}
-	svc := &mockSnippetService{byID: map[string]domain.Snippet{"newline-id": existingSnippet}}
+	svc := &mockSnippetService{byID: map[string]domain.Snippet{snippetID: existingSnippet}}
 	h := NewHandler(svc)
 	r := gin.New()
 	r.PUT("/v1/snippets/:id", h.Update)
 
-	contentWithNewlines := "Line 1\nLine 2\r\nLine 3\n\nLine 5"
-	// JSON encode the content to properly escape newlines
-	contentJSON, _ := json.Marshal(contentWithNewlines)
-	body := fmt.Sprintf(`{"content":%s,"expires_in":60,"tags":["newlines"]}`, string(contentJSON))
+	// JSON encode the content to properly escape special characters
+	contentJSON, _ := json.Marshal(content)
+	body := fmt.Sprintf(`{"content":%s,"expires_in":60,"tags":["%s"]}`, string(contentJSON), testName)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/newline-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/"+snippetID, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("want 200 for content with newlines, got %d", w.Code)
+		t.Fatalf("want 200 for content with %s, got %d", testName, w.Code)
 	}
 
 	var resp domain.SnippetResponseDTO
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
-	if resp.Content != contentWithNewlines {
-		t.Fatalf("expected newlines preserved, got %s", resp.Content)
+	if resp.Content != content {
+		t.Fatalf("expected %s preserved, got %s", testName, resp.Content)
 	}
 }
 
+func TestSnippetUpdate_ContentWithNewlines(t *testing.T) {
+	contentWithNewlines := "Line 1\nLine 2\r\nLine 3\n\nLine 5"
+	testUpdateWithSpecialContent(t, "newline-id", contentWithNewlines, "newlines")
+}
+
 func TestSnippetUpdate_ContentWithQuotes(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	existingSnippet := domain.Snippet{
-		ID:        "quotes-id",
-		Content:   "old content",
-		CreatedAt: time.Now(),
-	}
-	svc := &mockSnippetService{byID: map[string]domain.Snippet{"quotes-id": existingSnippet}}
-	h := NewHandler(svc)
-	r := gin.New()
-	r.PUT("/v1/snippets/:id", h.Update)
-
 	contentWithQuotes := `Content with "double" and 'single' quotes`
-	// JSON encode to properly escape quotes
-	contentJSON, _ := json.Marshal(contentWithQuotes)
-	body := fmt.Sprintf(`{"content":%s,"expires_in":60,"tags":["quotes"]}`, string(contentJSON))
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/quotes-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200 for content with quotes, got %d", w.Code)
-	}
-
-	var resp domain.SnippetResponseDTO
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
-	}
-	if resp.Content != contentWithQuotes {
-		t.Fatalf("expected quotes preserved, got %s", resp.Content)
-	}
+	testUpdateWithSpecialContent(t, "quotes-id", contentWithQuotes, "quotes")
 }
 
 func TestSnippetUpdate_MalformedJSON_MissingBrace(t *testing.T) {
@@ -1367,8 +1352,8 @@ func TestSnippetUpdate_MalformedJSON_MissingBrace(t *testing.T) {
 
 	malformedJSON := `{"content":"test","expires_in":60,"tags":[]` // Missing closing brace
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/test-id", bytes.NewBufferString(malformedJSON))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/"+testID, bytes.NewBufferString(malformedJSON))
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400 for malformed JSON, got %d", w.Code)
@@ -1384,8 +1369,8 @@ func TestSnippetUpdate_MalformedJSON_InvalidValue(t *testing.T) {
 
 	malformedJSON := `{"content":"test","expires_in":"not-a-number","tags":[]}` // String where int expected
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/test-id", bytes.NewBufferString(malformedJSON))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/"+testID, bytes.NewBufferString(malformedJSON))
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400 for invalid JSON value type, got %d", w.Code)
@@ -1404,7 +1389,7 @@ func TestSnippetUpdate_NoContentType(t *testing.T) {
 	r := gin.New()
 	r.PUT("/v1/snippets/:id", h.Update)
 
-	body := `{"content":"updated","expires_in":60,"tags":[]}`
+	body := fmt.Sprintf(`{"content":"%s","expires_in":60,"tags":[]}`, updatedContent)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/no-content-type-id", bytes.NewBufferString(body))
 	// Intentionally not setting Content-Type header
@@ -1427,7 +1412,7 @@ func TestSnippetUpdate_WrongContentType(t *testing.T) {
 	r := gin.New()
 	r.PUT("/v1/snippets/:id", h.Update)
 
-	body := `{"content":"updated","expires_in":60,"tags":[]}`
+	body := fmt.Sprintf(`{"content":"%s","expires_in":60,"tags":[]}`, updatedContent)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/wrong-content-type-id", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "text/plain") // Wrong content type
@@ -1447,8 +1432,8 @@ func TestSnippetUpdate_EmptyBody(t *testing.T) {
 	r.PUT("/v1/snippets/:id", h.Update)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/test-id", bytes.NewBufferString(""))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/"+testID, bytes.NewBufferString(""))
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400 for empty body, got %d", w.Code)
@@ -1467,8 +1452,8 @@ func TestSnippetUpdate_VeryLargePayload(t *testing.T) {
 	body := fmt.Sprintf(`{"content":"%s","expires_in":60,"tags":["large"]}`, largeContent)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/test-id", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPut, "/v1/snippets/"+testID, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", testContentType)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400 for very large payload, got %d", w.Code)

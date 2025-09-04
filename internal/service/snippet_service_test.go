@@ -13,6 +13,10 @@ import (
 	"github.com/roguepikachu/bonsai/internal/repository"
 )
 
+const (
+	updatedTag = "updated"
+)
+
 type stubClock struct{ t time.Time }
 
 func (s stubClock) Now() time.Time { return s.t }
@@ -637,7 +641,7 @@ func TestUpdateSnippet_Success(t *testing.T) {
 	repo := &fakeRepo{findByID: map[string]domain.Snippet{"test-id": existing}}
 	s := NewServiceWithOptions(repo, stubClock{t: fixed})
 
-	updated, err := s.UpdateSnippet(context.Background(), "test-id", "updated content", 300, []string{"updated", "test"})
+	updated, err := s.UpdateSnippet(context.Background(), "test-id", "updated content", 300, []string{updatedTag, "test"})
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -647,7 +651,7 @@ func TestUpdateSnippet_Success(t *testing.T) {
 	if updated.Content != "updated content" {
 		t.Errorf("expected content to be updated: got %s", updated.Content)
 	}
-	if len(updated.Tags) != 2 || updated.Tags[0] != "updated" || updated.Tags[1] != "test" {
+	if len(updated.Tags) != 2 || updated.Tags[0] != updatedTag || updated.Tags[1] != "test" {
 		t.Errorf("expected tags to be updated: got %v", updated.Tags)
 	}
 	if !updated.CreatedAt.Equal(existing.CreatedAt) {
@@ -697,7 +701,7 @@ func TestUpdateSnippet_NoExpiry(t *testing.T) {
 	repo := &fakeRepo{findByID: map[string]domain.Snippet{"test-id": existing}}
 	s := NewServiceWithOptions(repo, stubClock{t: fixed})
 
-	updated, err := s.UpdateSnippet(context.Background(), "test-id", "updated", 0, []string{"no-expiry"})
+	updated, err := s.UpdateSnippet(context.Background(), "test-id", updatedTag, 0, []string{"no-expiry"})
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -720,7 +724,7 @@ func TestUpdateSnippet_ExactlyAtExpiry(t *testing.T) {
 	s := NewServiceWithOptions(repo, stubClock{t: now})
 
 	// Should allow update when current time equals expiry time (not after)
-	updated, err := s.UpdateSnippet(context.Background(), "exact-exp-id", "updated", 300, []string{"test"})
+	updated, err := s.UpdateSnippet(context.Background(), "exact-exp-id", updatedTag, 300, []string{"test"})
 	if err != nil {
 		t.Fatalf("unexpected err for exact expiry time: %v", err)
 	}
@@ -874,7 +878,7 @@ func TestUpdateSnippet_NilTags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected err for nil tags: %v", err)
 	}
-	if updated.Tags != nil && len(updated.Tags) != 0 {
+	if len(updated.Tags) != 0 {
 		t.Errorf("expected nil or empty tags, got %v", updated.Tags)
 	}
 }

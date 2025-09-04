@@ -28,6 +28,10 @@ import (
 	"github.com/roguepikachu/bonsai/internal/service"
 )
 
+const (
+	updatedContent = "Updated content"
+)
+
 const ciTrue = "true"
 
 var (
@@ -652,7 +656,7 @@ func Test_SnippetUpdate(t *testing.T) {
 
 	// Test successful update
 	updateReq := map[string]any{
-		"content":    "Updated content",
+		"content":    updatedContent,
 		"expires_in": 600,
 		"tags":       []string{"updated", "modified"},
 	}
@@ -672,7 +676,7 @@ func Test_SnippetUpdate(t *testing.T) {
 	if updated.ID != snippetID {
 		t.Errorf("ID should be preserved: expected %s, got %s", snippetID, updated.ID)
 	}
-	if updated.Content != "Updated content" {
+	if updated.Content != updatedContent {
 		t.Errorf("Content not updated: expected 'Updated content', got %s", updated.Content)
 	}
 	if updated.CreatedAt != originalCreatedAt {
@@ -685,7 +689,7 @@ func Test_SnippetUpdate(t *testing.T) {
 	// Verify updated snippet in database
 	expectedUpdated := domain.Snippet{
 		ID:      snippetID,
-		Content: "Updated content",
+		Content: updatedContent,
 		Tags:    []string{"updated", "modified"},
 	}
 	verifySnippetInDatabase(t, snippetID, expectedUpdated)
@@ -702,7 +706,7 @@ func Test_SnippetUpdate(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("Get after update failed: expected 200, got %d", code)
 	}
-	if retrieved.Content != "Updated content" {
+	if retrieved.Content != updatedContent {
 		t.Errorf("Retrieved content after update: expected 'Updated content', got %s", retrieved.Content)
 	}
 	if hdr.Get("X-Cache") == "" {
@@ -724,7 +728,7 @@ func Test_SnippetUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HTTP request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("Expected 400 for invalid JSON, got %d", resp.StatusCode)
 	}
@@ -1680,10 +1684,10 @@ func Test_SnippetUpdateEdgeCases(t *testing.T) {
 	}{
 		{
 			name:           "Valid update with all fields",
-			request:        map[string]any{"content": "Updated content", "expires_in": 600, "tags": []string{"updated", "test"}},
+			request:        map[string]any{"content": updatedContent, "expires_in": 600, "tags": []string{"updated", "test"}},
 			expectedStatus: http.StatusOK,
 			validate: func(t *testing.T, resp map[string]any) {
-				if resp["content"].(string) != "Updated content" {
+				if resp["content"].(string) != updatedContent {
 					t.Errorf("Content not updated: %s", resp["content"])
 				}
 				if resp["tags"] != nil {
@@ -1696,7 +1700,7 @@ func Test_SnippetUpdateEdgeCases(t *testing.T) {
 			},
 		},
 		{
-			name:           "Update with empty content", 
+			name:           "Update with empty content",
 			request:        map[string]any{"content": "", "expires_in": 300, "tags": []string{"empty"}},
 			expectedStatus: http.StatusBadRequest, // Empty content not allowed by validation
 			validate:       nil,
@@ -2138,7 +2142,7 @@ func Test_UpdateMalformedRequests(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Request failed: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != tc.expected {
 				t.Errorf("Expected status %d, got %d", tc.expected, resp.StatusCode)

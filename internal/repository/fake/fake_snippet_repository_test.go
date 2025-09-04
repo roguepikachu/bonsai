@@ -775,7 +775,7 @@ func TestFakeRepo_Update_NilTags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find after nil tags update: %v", err)
 	}
-	if got.Tags != nil && len(got.Tags) != 0 {
+	if len(got.Tags) != 0 {
 		t.Fatalf("expected nil or empty tags, got %v", got.Tags)
 	}
 }
