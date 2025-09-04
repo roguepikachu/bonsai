@@ -130,3 +130,45 @@ func (s *Service) GetSnippetByID(ctx context.Context, id string) (domain.Snippet
 	}
 	return snippet, meta, nil
 }
+
+// UpdateSnippet updates an existing snippet with new content, expiry, and tags.
+func (s *Service) UpdateSnippet(ctx context.Context, id string, content string, expiresIn int, tags []string) (domain.Snippet, error) {
+	// First check if snippet exists
+	existing, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return domain.Snippet{}, fmt.Errorf("%w", ErrSnippetNotFound)
+		}
+		return domain.Snippet{}, fmt.Errorf("find by id: %w", err)
+	}
+
+	// Check if snippet is expired
+	if !existing.ExpiresAt.IsZero() && s.clock.Now().After(existing.ExpiresAt) {
+		return domain.Snippet{}, fmt.Errorf("cannot update expired snippet: %w", ErrSnippetExpired)
+	}
+
+	now := s.clock.Now()
+	var expiresAt time.Time
+	if expiresIn > 0 {
+		expiresAt = now.Add(time.Duration(expiresIn) * time.Second)
+	} else {
+		expiresAt = time.Time{} // zero value, means no expiry
+	}
+
+	updatedSnippet := domain.Snippet{
+		ID:        id,
+		Content:   content,
+		Tags:      tags,
+		CreatedAt: existing.CreatedAt, // preserve original creation time
+		ExpiresAt: expiresAt,
+	}
+
+	if err := s.repo.Update(ctx, updatedSnippet); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return domain.Snippet{}, fmt.Errorf("%w", ErrSnippetNotFound)
+		}
+		return domain.Snippet{}, fmt.Errorf("update snippet: %w", err)
+	}
+
+	return updatedSnippet, nil
+}

@@ -29,7 +29,7 @@ func NewSnippetRepository(pool *pgxpool.Pool) *SnippetRepository {
 func (r *SnippetRepository) EnsureSchema(ctx context.Context) error {
 	// Create table and indices in separate statements to avoid race conditions
 	// when multiple tests run in parallel
-	
+
 	// Create table first
 	const createTable = `
 CREATE TABLE IF NOT EXISTS snippets (
@@ -39,24 +39,24 @@ CREATE TABLE IF NOT EXISTS snippets (
     created_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ NULL
 );`
-	
+
 	if _, err := r.pool.Exec(ctx, createTable); err != nil {
 		return fmt.Errorf("create table: %w", err)
 	}
-	
+
 	// Create indices separately - ignore errors as they might already exist
 	indices := []string{
 		`CREATE INDEX IF NOT EXISTS idx_snippets_created_at ON snippets (created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_snippets_expires_at ON snippets (expires_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_snippets_tags_gin ON snippets USING GIN (tags)`,
 	}
-	
+
 	for _, index := range indices {
 		// Ignore errors for indices as they might fail due to race conditions
 		// but the IF NOT EXISTS should handle it
 		_, _ = r.pool.Exec(ctx, index)
 	}
-	
+
 	logger.Info(ctx, "postgres schema ensured")
 	return nil
 }
@@ -160,6 +160,31 @@ WHERE (expires_at IS NULL OR expires_at > NOW())
 		return nil, rows.Err()
 	}
 	return res, nil
+}
+
+// Update modifies an existing snippet in Postgres.
+func (r *SnippetRepository) Update(ctx context.Context, s domain.Snippet) error {
+	var expires *time.Time
+	if !s.ExpiresAt.IsZero() {
+		expires = &s.ExpiresAt
+	}
+	tagsJSON, err := json.Marshal(s.Tags)
+	if err != nil {
+		return fmt.Errorf("marshal tags: %w", err)
+	}
+	const q = `
+UPDATE snippets 
+SET content = $2, tags = $3::jsonb, expires_at = $4
+WHERE id = $1
+`
+	ct, err := r.pool.Exec(ctx, q, s.ID, s.Content, string(tagsJSON), expires)
+	if err != nil {
+		return fmt.Errorf("update snippet: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
 }
 
 var _ repository.SnippetRepository = (*SnippetRepository)(nil)

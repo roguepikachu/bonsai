@@ -13,6 +13,13 @@ type CreateSnippetRequestDTO struct {
 	Tags      []string `json:"tags"`
 }
 
+// UpdateSnippetRequestDTO represents the expected request body for updating a snippet.
+type UpdateSnippetRequestDTO struct {
+	Content   string   `json:"content" binding:"required,max=10240"`
+	ExpiresIn int      `json:"expires_in" binding:"omitempty,gte=0,lte=2592000"`
+	Tags      []string `json:"tags"`
+}
+
 // SnippetResponseDTO represents the response for a single snippet.
 type SnippetResponseDTO struct {
 	ID        string   `json:"id"`
