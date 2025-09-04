@@ -1,6 +1,6 @@
 services:
   redis:
-    image: public.ecr.aws/docker/library/redis:latest
+    image: public.ecr.aws/docker/library/redis:7-alpine
     container_name: redis
     ports:
       - "6379:6379"

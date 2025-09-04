@@ -82,7 +82,7 @@ jobs:
     
     services:
       postgres:
-        image: postgres:15
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_USER: bonsai
           POSTGRES_PASSWORD: bonsai
@@ -93,17 +93,17 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         ports:
-          - 5432
+          - 5432:5432
       
       redis:
-        image: redis:7-alpine
+        image: public.ecr.aws/docker/library/redis:7-alpine
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
         ports:
-          - 6379
+          - 6379:6379
 
     steps:
     - uses: actions/checkout@v4
@@ -155,28 +155,29 @@ jobs:
     
     services:
       postgres:
-        image: postgres:15
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: bonsai
+          POSTGRES_MULTIPLE_DATABASES: bonsai,bonsai_test
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
         ports:
-          - 5432
+          - 5432:5432
       
       redis:
-        image: redis:7-alpine
+        image: public.ecr.aws/docker/library/redis:7-alpine
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
         ports:
-          - 6379
+          - 6379:6379
     
     steps:
     - uses: actions/checkout@v4
