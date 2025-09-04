@@ -7,6 +7,9 @@ PKG := ./...
 BINARY := bonsai
 DOCKER_COMPOSE := docker/docker-compose.yaml
 
+# Detect docker compose command
+DOCKER_COMPOSE_CMD := $(shell docker compose version > /dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
+
 .DEFAULT_GOAL := help
 
 # Colors for better output
@@ -52,16 +55,16 @@ clean: ## Clean up built artifacts
 .PHONY: services services-stop services-restart logs
 services: ## Start database services (PostgreSQL + Redis)
 	@echo "$(COLOR_BLUE)Starting database services...$(COLOR_RESET)"
-	docker compose -f $(DOCKER_COMPOSE) up -d
+	$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) up -d
 
 services-stop: ## Stop all services
 	@echo "$(COLOR_YELLOW)Stopping services...$(COLOR_RESET)"
-	docker compose -f $(DOCKER_COMPOSE) down
+	$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) down
 
 services-restart: services-stop services ## Restart all services
 
 logs: ## Show service logs
-	docker compose -f $(DOCKER_COMPOSE) logs -f
+	$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) logs -f
 
 ##@ Testing
 .PHONY: test test-unit test-integration test-acceptance coverage
