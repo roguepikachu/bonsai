@@ -134,7 +134,8 @@ func TestService_IntegrationPostgres(t *testing.T) {
 		if len(updatedSnippet.Tags) != 2 || updatedSnippet.Tags[0] != "updated" || updatedSnippet.Tags[1] != "modified" {
 			t.Errorf("Tags not updated correctly: got %v", updatedSnippet.Tags)
 		}
-		if !updatedSnippet.CreatedAt.Equal(snippet.CreatedAt) {
+		// PostgreSQL stores timestamps with microsecond precision, so we need to truncate for comparison
+		if !updatedSnippet.CreatedAt.Truncate(time.Microsecond).Equal(snippet.CreatedAt.Truncate(time.Microsecond)) {
 			t.Error("CreatedAt should be preserved during update")
 		}
 
@@ -1471,9 +1472,12 @@ func TestService_UpdateEdgeCases(t *testing.T) {
 		}
 
 		// Verify CreatedAt is preserved
-		if !updatedSnippet.CreatedAt.Equal(originalCreatedAt) {
+		// PostgreSQL stores timestamps with microsecond precision, so we need to truncate for comparison
+		originalTruncated := originalCreatedAt.Truncate(time.Microsecond)
+		updatedTruncated := updatedSnippet.CreatedAt.Truncate(time.Microsecond)
+		if !updatedTruncated.Equal(originalTruncated) {
 			t.Errorf("CreatedAt not preserved: original=%v, updated=%v",
-				originalCreatedAt, updatedSnippet.CreatedAt)
+				originalTruncated, updatedTruncated)
 		}
 
 		// Also verify by reading back
@@ -1481,9 +1485,10 @@ func TestService_UpdateEdgeCases(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetSnippetByID failed: %v", err)
 		}
-		if !retrieved.CreatedAt.Equal(originalCreatedAt) {
+		retrievedTruncated := retrieved.CreatedAt.Truncate(time.Microsecond)
+		if !retrievedTruncated.Equal(originalTruncated) {
 			t.Errorf("CreatedAt not preserved in database: original=%v, retrieved=%v",
-				originalCreatedAt, retrieved.CreatedAt)
+				originalTruncated, retrievedTruncated)
 		}
 	})
 
