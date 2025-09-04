@@ -1,5 +1,5 @@
-//revive:disable:var-naming - allow test package name 'utils' to match library
-package utils
+//revive:disable:var-naming - allow test package name 'ctxutil' to match library
+package ctxutil
 
 import (
 	"context"

@@ -341,8 +341,8 @@ func TestRequestLogger_WithPathParams(t *testing.T) {
 	})
 	r.GET("/users/:id/posts/:postId", func(c *gin.Context) {
 		id := c.Param("id")
-		postId := c.Param("postId")
-		c.JSON(http.StatusOK, gin.H{"user_id": id, "post_id": postId})
+		postID := c.Param("postId")
+		c.JSON(http.StatusOK, gin.H{"user_id": id, "post_id": postID})
 	})
 
 	// Test single param

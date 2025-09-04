@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/roguepikachu/bonsai/internal/utils"
+	ctxutil "github.com/roguepikachu/bonsai/internal/utils"
 )
 
 func TestRequestIDMiddleware_SetsHeaders(t *testing.T) {
@@ -90,15 +90,19 @@ func TestRequestIDMiddleware_GeneratesNewIDs(t *testing.T) {
 	}
 }
 
-func TestRequestIDMiddleware_OnlyRequestIDProvided(t *testing.T) {
+func testRequestIDMiddleware(t *testing.T, reqID, clientID string) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(RequestIDMiddleware())
 	r.GET("/test", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("X-Request-ID", "provided-request-id")
-	// Not setting X-Client-ID
+	if reqID != "" {
+		req.Header.Set("X-Request-ID", reqID)
+	}
+	if clientID != "" {
+		req.Header.Set("X-Client-ID", clientID)
+	}
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -106,48 +110,36 @@ func TestRequestIDMiddleware_OnlyRequestIDProvided(t *testing.T) {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
 
-	requestID := w.Header().Get(headerRequestID)
-	clientID := w.Header().Get(headerClientID)
+	gotReqID := w.Header().Get(headerRequestID)
+	gotClientID := w.Header().Get(headerClientID)
 
-	if requestID != "provided-request-id" {
-		t.Fatalf("expected provided request ID, got %s", requestID)
+	if reqID != "" && gotReqID != reqID {
+		t.Fatalf("expected provided request ID, got %s", gotReqID)
 	}
-	if clientID == "" {
+	if reqID == "" && gotReqID == "" {
+		t.Fatalf("request ID should be generated when not provided")
+	}
+	if reqID == "" && len(gotReqID) != 36 {
+		t.Fatalf("expected generated UUID for request ID")
+	}
+
+	if clientID != "" && gotClientID != clientID {
+		t.Fatalf("expected provided client ID, got %s", gotClientID)
+	}
+	if clientID == "" && gotClientID == "" {
 		t.Fatalf("client ID should be generated when not provided")
 	}
-	if len(clientID) != 36 {
+	if clientID == "" && len(gotClientID) != 36 {
 		t.Fatalf("expected generated UUID for client ID")
 	}
 }
 
+func TestRequestIDMiddleware_OnlyRequestIDProvided(t *testing.T) {
+	testRequestIDMiddleware(t, "provided-request-id", "")
+}
+
 func TestRequestIDMiddleware_OnlyClientIDProvided(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.Use(RequestIDMiddleware())
-	r.GET("/test", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("X-Client-ID", "provided-client-id")
-	// Not setting X-Request-ID
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
-	}
-
-	requestID := w.Header().Get(headerRequestID)
-	clientID := w.Header().Get(headerClientID)
-
-	if clientID != "provided-client-id" {
-		t.Fatalf("expected provided client ID, got %s", clientID)
-	}
-	if requestID == "" {
-		t.Fatalf("request ID should be generated when not provided")
-	}
-	if len(requestID) != 36 {
-		t.Fatalf("expected generated UUID for request ID")
-	}
+	testRequestIDMiddleware(t, "", "provided-client-id")
 }
 
 func TestRequestIDMiddleware_ContextValues(t *testing.T) {
@@ -157,8 +149,8 @@ func TestRequestIDMiddleware_ContextValues(t *testing.T) {
 
 	var contextRequestID, contextClientID string
 	r.GET("/test", func(c *gin.Context) {
-		contextRequestID = utils.RequestID(c.Request.Context())
-		contextClientID = utils.ClientID(c.Request.Context())
+		contextRequestID = ctxutil.RequestID(c.Request.Context())
+		contextClientID = ctxutil.ClientID(c.Request.Context())
 		c.String(http.StatusOK, "ok")
 	})
 
@@ -364,10 +356,10 @@ func TestRequestIDMiddleware_ConcurrentRequests(t *testing.T) {
 	r.Use(RequestIDMiddleware())
 	r.GET("/test", func(c *gin.Context) {
 		// Verify context has IDs
-		if utils.RequestID(c.Request.Context()) == "" {
+		if ctxutil.RequestID(c.Request.Context()) == "" {
 			t.Errorf("no request ID in context")
 		}
-		if utils.ClientID(c.Request.Context()) == "" {
+		if ctxutil.ClientID(c.Request.Context()) == "" {
 			t.Errorf("no client ID in context")
 		}
 		c.String(http.StatusOK, "ok")
@@ -417,8 +409,8 @@ func TestRequestIDMiddleware_WithRequestBody(t *testing.T) {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"request_id": utils.RequestID(c.Request.Context()),
-			"client_id":  utils.ClientID(c.Request.Context()),
+			"request_id": ctxutil.RequestID(c.Request.Context()),
+			"client_id":  ctxutil.ClientID(c.Request.Context()),
 			"body":       body,
 		})
 	})
@@ -445,7 +437,7 @@ func TestRequestIDMiddleware_WithRequestBody(t *testing.T) {
 
 func TestUtils_RequestID_EmptyContext(t *testing.T) {
 	// Test with empty context
-	id := utils.RequestID(context.Background())
+	id := ctxutil.RequestID(context.Background())
 	if id != "" {
 		t.Fatalf("expected empty string for empty context, got %s", id)
 	}
@@ -453,7 +445,7 @@ func TestUtils_RequestID_EmptyContext(t *testing.T) {
 
 func TestUtils_ClientID_EmptyContext(t *testing.T) {
 	// Test with empty context
-	id := utils.ClientID(context.Background())
+	id := ctxutil.ClientID(context.Background())
 	if id != "" {
 		t.Fatalf("expected empty string for empty context, got %s", id)
 	}

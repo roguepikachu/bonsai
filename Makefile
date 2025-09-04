@@ -82,7 +82,7 @@ test-integration: ## Run integration tests (requires services)
 test-acceptance: ## Run full acceptance tests (auto-manages services)
 	@echo "$(COLOR_BLUE)Running acceptance tests...$(COLOR_RESET)"
 	@if [ -z "$$CI" ]; then $(MAKE) services; fi
-	$(GO) test -race -v ./internal/http/acceptance
+	$(GO) test -tags=acceptance -race -v ./internal/http/acceptance
 
 coverage: ## Generate test coverage report
 	@echo "$(COLOR_BLUE)Generating coverage report...$(COLOR_RESET)"

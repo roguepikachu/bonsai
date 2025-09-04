@@ -45,7 +45,7 @@ func loadDotEnv() {
 	if path != "" {
 		err := godotenv.Load(strings.Split(path, ",")...)
 		if err != nil {
-			logger.Fatal(context.Background(), err.Error())
+			logger.Fatal(context.Background(), "%v", err)
 		}
 	}
 }
@@ -55,6 +55,6 @@ func InitConf() {
 	loadDotEnv()
 
 	if err := env.Parse(&Conf); err != nil {
-		logger.Fatal(context.Background(), err.Error())
+		logger.Fatal(context.Background(), "%v", err)
 	}
 }

@@ -80,6 +80,8 @@ func TestReadiness_AllUp(t *testing.T) {
 	}
 }
 
+const statusFail = "fail"
+
 func TestReadiness_FailDeps(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	// Since we can't set private fields and the constructor only accepts real clients,
@@ -212,7 +214,7 @@ func TestReadiness_PostgresFailOnly(t *testing.T) {
 
 	if checks, ok := resp["checks"].(map[string]interface{}); ok {
 		if postgres, ok := checks["postgres"].(map[string]interface{}); ok {
-			if postgres["status"] != "fail" {
+			if postgres["status"] != statusFail {
 				t.Fatalf("expected postgres status fail, got %v", postgres["status"])
 			}
 		}
@@ -249,11 +251,9 @@ func TestReadiness_Timeout(t *testing.T) {
 	}
 }
 
-func TestReadiness_NoPostgres(t *testing.T) {
+func testReadinessNoDep(t *testing.T, dep string) {
 	gin.SetMode(gin.TestMode)
 	hh := &HealthHandler{pingTimeout: time.Second}
-	// With no dependencies set, should return 200
-
 	r := gin.New()
 	r.GET("/v1/readyz", hh.Readiness)
 	w := httptest.NewRecorder()
@@ -269,40 +269,20 @@ func TestReadiness_NoPostgres(t *testing.T) {
 	}
 
 	if checks, ok := resp["checks"].(map[string]interface{}); ok {
-		if postgres, ok := checks["postgres"].(map[string]interface{}); ok {
-			if postgres["status"] != "fail" {
-				t.Fatalf("expected postgres status fail when nil, got %v", postgres["status"])
+		if depMap, ok := checks[dep].(map[string]interface{}); ok {
+			if depMap["status"] != statusFail {
+				t.Fatalf("expected %s status fail when nil, got %v", dep, depMap["status"])
 			}
 		}
 	}
 }
 
+func TestReadiness_NoPostgres(t *testing.T) {
+	testReadinessNoDep(t, "postgres")
+}
+
 func TestReadiness_NoRedis(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	hh := &HealthHandler{pingTimeout: time.Second}
-	// With no dependencies set, should return 200
-
-	r := gin.New()
-	r.GET("/v1/readyz", hh.Readiness)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/readyz", nil))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
-	}
-
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
-	}
-
-	if checks, ok := resp["checks"].(map[string]interface{}); ok {
-		if redis, ok := checks["redis"].(map[string]interface{}); ok {
-			if redis["status"] != "fail" {
-				t.Fatalf("expected redis status fail when nil, got %v", redis["status"])
-			}
-		}
-	}
+	testReadinessNoDep(t, "redis")
 }
 
 func TestReadiness_NoBothDeps(t *testing.T) {

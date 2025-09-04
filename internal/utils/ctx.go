@@ -1,5 +1,5 @@
-// Package utils provides helpers for storing and retrieving values in context.
-package utils
+// Package ctxutil provides helpers for storing and retrieving values in context.
+package ctxutil
 
 import "context"
 

@@ -47,7 +47,7 @@ func (m *mockSnippetService) CreateSnippet(_ context.Context, content string, ex
 	return snippet, nil
 }
 
-func (m *mockSnippetService) ListSnippets(_ context.Context, page int, limit int, tag string) ([]domain.Snippet, error) {
+func (m *mockSnippetService) ListSnippets(_ context.Context, _ int, _ int, _ string) ([]domain.Snippet, error) {
 	m.listCalls++
 	if m.listErr != nil {
 		return nil, m.listErr

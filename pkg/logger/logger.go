@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/roguepikachu/bonsai/internal/utils"
+	ctxutil "github.com/roguepikachu/bonsai/internal/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -61,8 +61,8 @@ func setLogLevel(level string) {
 
 // Info logs an informational message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Info(ctx context.Context, msg string, args ...any) {
-	reqID := utils.RequestID(ctx)
-	clientID := utils.ClientID(ctx)
+	reqID := ctxutil.RequestID(ctx)
+	clientID := ctxutil.ClientID(ctx)
 	if reqID != "" || clientID != "" {
 		entry := logrus.WithFields(logrus.Fields{})
 		if reqID != "" {
@@ -87,8 +87,8 @@ func Info(ctx context.Context, msg string, args ...any) {
 
 // Debug logs a debug message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Debug(ctx context.Context, msg string, args ...any) {
-	reqID := utils.RequestID(ctx)
-	clientID := utils.ClientID(ctx)
+	reqID := ctxutil.RequestID(ctx)
+	clientID := ctxutil.ClientID(ctx)
 	if reqID != "" || clientID != "" {
 		entry := logrus.WithFields(logrus.Fields{})
 		if reqID != "" {
@@ -113,8 +113,8 @@ func Debug(ctx context.Context, msg string, args ...any) {
 
 // Error logs an error message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Error(ctx context.Context, msg string, args ...any) {
-	reqID := utils.RequestID(ctx)
-	clientID := utils.ClientID(ctx)
+	reqID := ctxutil.RequestID(ctx)
+	clientID := ctxutil.ClientID(ctx)
 	if reqID != "" || clientID != "" {
 		entry := logrus.WithFields(logrus.Fields{})
 		if reqID != "" {
@@ -139,8 +139,8 @@ func Error(ctx context.Context, msg string, args ...any) {
 
 // Trace logs a trace message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Trace(ctx context.Context, msg string, args ...any) {
-	reqID := utils.RequestID(ctx)
-	clientID := utils.ClientID(ctx)
+	reqID := ctxutil.RequestID(ctx)
+	clientID := ctxutil.ClientID(ctx)
 	if reqID != "" || clientID != "" {
 		entry := logrus.WithFields(logrus.Fields{})
 		if reqID != "" {
@@ -165,8 +165,8 @@ func Trace(ctx context.Context, msg string, args ...any) {
 
 // Warn logs a warning message with optional formatting arguments. If a request ID is present in the context, it is included in the log.
 func Warn(ctx context.Context, msg string, args ...any) {
-	reqID := utils.RequestID(ctx)
-	clientID := utils.ClientID(ctx)
+	reqID := ctxutil.RequestID(ctx)
+	clientID := ctxutil.ClientID(ctx)
 	if reqID != "" || clientID != "" {
 		entry := logrus.WithFields(logrus.Fields{})
 		if reqID != "" {
@@ -191,8 +191,8 @@ func Warn(ctx context.Context, msg string, args ...any) {
 
 // Fatal logs a fatal message with optional formatting arguments and then exits the application. If a request ID is present in the context, it is included in the log.
 func Fatal(ctx context.Context, msg string, args ...any) {
-	reqID := utils.RequestID(ctx)
-	clientID := utils.ClientID(ctx)
+	reqID := ctxutil.RequestID(ctx)
+	clientID := ctxutil.ClientID(ctx)
 	if reqID != "" || clientID != "" {
 		entry := logrus.WithFields(logrus.Fields{})
 		if reqID != "" {
@@ -228,10 +228,10 @@ func With(ctx context.Context, fields map[string]any) *logrus.Entry {
 		}
 		entry = entry.WithFields(lf)
 	}
-	if rid := utils.RequestID(ctx); rid != "" {
+	if rid := ctxutil.RequestID(ctx); rid != "" {
 		entry = entry.WithField("requestId", rid)
 	}
-	if cid := utils.ClientID(ctx); cid != "" {
+	if cid := ctxutil.ClientID(ctx); cid != "" {
 		entry = entry.WithField("clientId", cid)
 	}
 	return entry

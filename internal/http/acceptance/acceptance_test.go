@@ -1,3 +1,6 @@
+//go:build acceptance || !integration
+// +build acceptance !integration
+
 package acceptance
 
 import (
@@ -25,10 +28,31 @@ import (
 	"github.com/roguepikachu/bonsai/internal/service"
 )
 
+const ciTrue = "true"
+
 var (
 	testDatabaseURL = getEnvOrDefault("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/bonsai_test?sslmode=disable")
-	testRedisURL    = getEnvOrDefault("REDIS_URL", "redis://localhost:6379/1") // Use DB 1 for tests to avoid conflicts with dev data
+	testRedisAddr   string
 )
+
+func init() {
+	// Parse Redis address from URL
+	redisURL := getEnvOrDefault("REDIS_URL", "redis://localhost:6379/1")
+	if strings.HasPrefix(redisURL, "redis://") {
+		addr := strings.TrimPrefix(redisURL, "redis://")
+		if idx := strings.Index(addr, "/"); idx > 0 {
+			testRedisAddr = addr[:idx]
+		} else {
+			testRedisAddr = addr
+		}
+	} else {
+		testRedisAddr = "localhost:6379"
+	}
+	// Handle CI environment with different Redis port
+	if os.Getenv("CI") == ciTrue && os.Getenv("REDIS_PORT") != "" {
+		testRedisAddr = "localhost:" + os.Getenv("REDIS_PORT")
+	}
+}
 
 func getEnvOrDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
@@ -55,7 +79,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// Start services (skip in CI as they're provided by GitHub Actions)
-	if os.Getenv("CI") != "true" {
+	if os.Getenv("CI") != ciTrue {
 		if err := startServices(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to start services: %v\n", err)
 			os.Exit(1)
@@ -65,7 +89,7 @@ func TestMain(m *testing.M) {
 	// Wait for services to be ready
 	if err := waitForServices(); err != nil {
 		fmt.Fprintf(os.Stderr, "Services not ready: %v\n", err)
-		if os.Getenv("CI") != "true" {
+		if os.Getenv("CI") != ciTrue {
 			stopServices()
 		}
 		os.Exit(1)
@@ -74,7 +98,7 @@ func TestMain(m *testing.M) {
 	// Start test server
 	if err := startTestServer(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start test server: %v\n", err)
-		if os.Getenv("CI") != "true" {
+		if os.Getenv("CI") != ciTrue {
 			stopServices()
 		}
 		os.Exit(1)
@@ -85,7 +109,7 @@ func TestMain(m *testing.M) {
 
 	// Cleanup
 	stopTestServer()
-	if os.Getenv("CI") != "true" {
+	if os.Getenv("CI") != ciTrue {
 		stopServices()
 	}
 
@@ -127,7 +151,7 @@ func waitForServices() error {
 
 	// Wait for Redis
 	for i := 0; i < 30; i++ {
-		rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 1})
+		rdb := redis.NewClient(&redis.Options{Addr: testRedisAddr, DB: 1})
 		if err := rdb.Ping(context.Background()).Err(); err == nil {
 			_ = rdb.Close() // Best effort cleanup
 			break
@@ -161,7 +185,7 @@ func startTestServer() error {
 	}
 
 	// Setup Redis client
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 1})
+	rdb := redis.NewClient(&redis.Options{Addr: testRedisAddr, DB: 1})
 	cachedSnippetRepo := cachedRepo.NewSnippetRepository(pgRepo, rdb, 5*time.Minute)
 
 	// Setup service
@@ -206,7 +230,12 @@ func startTestServer() error {
 
 func createTestDatabase() error {
 	// Connect to default postgres database to create test database
-	defaultURL := "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+	// Extract connection info from testDatabaseURL and connect to postgres database
+	defaultURL := strings.Replace(testDatabaseURL, "/bonsai_test", "/postgres", 1)
+	if os.Getenv("CI") == "true" {
+		// In CI, use the bonsai database directly (already created by service container)
+		defaultURL = strings.Replace(testDatabaseURL, "_test", "", 1)
+	}
 	pool, err := pgxpool.New(context.Background(), defaultURL)
 	if err != nil {
 		return err
@@ -253,7 +282,7 @@ func cleanDatabase(t *testing.T) {
 	}
 
 	// Clean Redis
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 1})
+	rdb := redis.NewClient(&redis.Options{Addr: testRedisAddr, DB: 1})
 	defer func() { _ = rdb.Close() }() // Best effort cleanup
 	rdb.FlushDB(context.Background())
 }
@@ -395,7 +424,7 @@ func getSnippetsFromDatabase(t *testing.T, limit int) []domain.Snippet {
 // Redis verification helpers
 func verifySnippetInRedis(t *testing.T, id string) bool {
 	t.Helper()
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 1})
+	rdb := redis.NewClient(&redis.Options{Addr: testRedisAddr, DB: 1})
 	defer func() { _ = rdb.Close() }() // Best effort cleanup
 
 	key := fmt.Sprintf("snippet:%s", id)
@@ -415,7 +444,7 @@ func verifySnippetNotInRedis(t *testing.T, id string) {
 
 func getRedisKeyCount(t *testing.T, pattern string) int {
 	t.Helper()
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 1})
+	rdb := redis.NewClient(&redis.Options{Addr: testRedisAddr, DB: 1})
 	defer func() { _ = rdb.Close() }() // Best effort cleanup
 
 	keys, err := rdb.Keys(context.Background(), pattern).Result()
@@ -651,7 +680,6 @@ func Test_ListPaginationAndFiltering(t *testing.T) {
 		{"content": "HTML code", "expires_in": 300, "tags": []string{"html", "web"}},
 	}
 
-	createdIDs := make([]string, 0, len(snippets))
 	for _, snippet := range snippets {
 		var created struct {
 			ID string `json:"id"`
@@ -660,7 +688,6 @@ func Test_ListPaginationAndFiltering(t *testing.T) {
 		if code != http.StatusCreated {
 			t.Fatalf("Failed to create snippet: %d", code)
 		}
-		createdIDs = append(createdIDs, created.ID)
 		time.Sleep(10 * time.Millisecond) // Small delay to ensure different timestamps
 	}
 
@@ -1189,7 +1216,7 @@ func Test_RedisFailover(t *testing.T) {
 	}
 
 	// Manually clear Redis cache to simulate Redis failure/flush
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 1})
+	rdb := redis.NewClient(&redis.Options{Addr: testRedisAddr, DB: 1})
 	defer func() { _ = rdb.Close() }() // Best effort cleanup
 	rdb.FlushDB(context.Background())
 
@@ -1222,7 +1249,6 @@ func Test_PaginationConsistency(t *testing.T) {
 
 	// Create 25 snippets for pagination testing
 	const totalSnippets = 25
-	var allIDs []string
 
 	for i := 0; i < totalSnippets; i++ {
 		createReq := map[string]any{
@@ -1237,7 +1263,6 @@ func Test_PaginationConsistency(t *testing.T) {
 		if code != http.StatusCreated {
 			t.Fatalf("Failed to create snippet %d: %d", i+1, code)
 		}
-		allIDs = append(allIDs, created.ID)
 		time.Sleep(5 * time.Millisecond) // Ensure different timestamps
 	}
 

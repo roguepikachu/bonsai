@@ -46,7 +46,7 @@ func (t *testSvc) CreateSnippet(_ context.Context, content string, expiresIn int
 	return s, nil
 }
 
-func (t *testSvc) ListSnippets(_ context.Context, page int, limit int, tag string) ([]domain.Snippet, error) {
+func (t *testSvc) ListSnippets(_ context.Context, _ int, _ int, _ string) ([]domain.Snippet, error) {
 	if t.shouldFailList {
 		return nil, service.ErrSnippetNotFound
 	}
@@ -64,21 +64,12 @@ func (t *testSvc) GetSnippetByID(_ context.Context, id string) (domain.Snippet, 
 	if t.shouldFailGet {
 		return domain.Snippet{}, service.SnippetMeta{CacheStatus: service.CacheMiss}, service.ErrSnippetNotFound
 	}
-	if t.snippets != nil && len(t.snippets) > 0 {
+	if len(t.snippets) > 0 {
 		if s, ok := t.snippets[id]; ok {
 			return s, service.SnippetMeta{CacheStatus: service.CacheHit}, nil
 		}
 	}
 	return domain.Snippet{}, service.SnippetMeta{CacheStatus: service.CacheMiss}, service.ErrSnippetNotFound
-}
-
-// Mock pinger for health checks
-type mockPinger struct {
-	err error
-}
-
-func (m mockPinger) Ping(_ context.Context) error {
-	return m.err
 }
 
 func TestNewRouter_RoutesBasic(t *testing.T) {
@@ -470,7 +461,7 @@ func TestRouter_Panic(t *testing.T) {
 
 	// Add a route that panics for testing
 	v1 := r.Group("/v1")
-	v1.GET("/panic", func(c *gin.Context) {
+	v1.GET("/panic", func(_ *gin.Context) {
 		panic("test panic")
 	})
 

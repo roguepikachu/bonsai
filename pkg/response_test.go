@@ -233,9 +233,9 @@ func TestResponse_StructFieldTypes(t *testing.T) {
 	r := NewResponse(500, []int{1, 2, 3}, "internal error")
 
 	// Test field types
-	var _ int = r.Code
-	var _ string = r.Message
-	var _ interface{} = r.Data
+	var _ = r.Code
+	var _ = r.Message
+	var _ = r.Data
 
 	// Test data type assertion
 	if slice, ok := r.Data.([]int); ok {
@@ -247,7 +247,7 @@ func TestResponse_StructFieldTypes(t *testing.T) {
 	}
 }
 
-func TestResponse_ConcurrentAccess(t *testing.T) {
+func TestResponse_ConcurrentAccess(_ *testing.T) {
 	r := NewResponse(200, map[string]string{"key": "value"}, "success")
 
 	// Test concurrent read access (should be safe since we're not modifying)

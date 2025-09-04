@@ -122,7 +122,7 @@ func TestWithField_EmptyKey(t *testing.T) {
 	}
 }
 
-func TestLoggingMethods(t *testing.T) {
+func TestLoggingMethods(_ *testing.T) {
 	ctx := context.Background()
 
 	// These should not panic
@@ -132,7 +132,7 @@ func TestLoggingMethods(t *testing.T) {
 	Error(ctx, "error message")
 }
 
-func TestLoggingMethodsWithFormatting(t *testing.T) {
+func TestLoggingMethodsWithFormatting(_ *testing.T) {
 	ctx := context.Background()
 
 	// These should not panic and should handle formatting
@@ -142,7 +142,7 @@ func TestLoggingMethodsWithFormatting(t *testing.T) {
 	Error(ctx, "error: %t", false)
 }
 
-func TestLoggingWithContext(t *testing.T) {
+func TestLoggingWithContext(_ *testing.T) {
 	ctx := context.Background()
 
 	// Create entry with fields and log
@@ -153,7 +153,7 @@ func TestLoggingWithContext(t *testing.T) {
 	e.Error("error with context")
 }
 
-func TestLoggingWithFieldContext(t *testing.T) {
+func TestLoggingWithFieldContext(_ *testing.T) {
 	ctx := context.Background()
 
 	// Create entry with single field and log
@@ -164,7 +164,7 @@ func TestLoggingWithFieldContext(t *testing.T) {
 	e.Error("error with field")
 }
 
-func TestChainedLogging(t *testing.T) {
+func TestChainedLogging(_ *testing.T) {
 	ctx := context.Background()
 
 	// Chain multiple field additions
@@ -175,7 +175,7 @@ func TestChainedLogging(t *testing.T) {
 	e.Info("chained logging example")
 }
 
-func TestNilContext(t *testing.T) {
+func TestNilContext(_ *testing.T) {
 	// Test with nil context - skip the With functions as they rely on context utils
 	// The logger should handle basic operations without panicking
 	ctx := context.Background() // Use empty context instead of nil
@@ -189,7 +189,7 @@ func TestNilContext(t *testing.T) {
 	_ = With(ctx, map[string]any{"key": "value"})
 }
 
-func TestConcurrentLogging(t *testing.T) {
+func TestConcurrentLogging(_ *testing.T) {
 	ctx := context.Background()
 
 	// Test concurrent logging to ensure no race conditions
@@ -209,7 +209,7 @@ func TestConcurrentLogging(t *testing.T) {
 	}
 }
 
-func TestLargeData(t *testing.T) {
+func TestLargeData(_ *testing.T) {
 	ctx := context.Background()
 
 	// Test logging with large data structures
@@ -230,7 +230,7 @@ func TestLargeData(t *testing.T) {
 	e.Info("logging large data structures")
 }
 
-func TestSpecialCharacters(t *testing.T) {
+func TestSpecialCharacters(_ *testing.T) {
 	ctx := context.Background()
 
 	// Test with special characters and unicode
@@ -244,7 +244,7 @@ func TestSpecialCharacters(t *testing.T) {
 	e.Info("testing special characters")
 }
 
-func TestErrorInterface(t *testing.T) {
+func TestErrorInterface(_ *testing.T) {
 	ctx := context.Background()
 
 	// Test logging actual error types
@@ -258,7 +258,7 @@ func TestErrorInterface(t *testing.T) {
 	e2.Info("nil error test")
 }
 
-func TestMultipleWithCalls(t *testing.T) {
+func TestMultipleWithCalls(_ *testing.T) {
 	ctx := context.Background()
 
 	// Test multiple With calls don't interfere

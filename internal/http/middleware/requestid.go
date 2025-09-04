@@ -4,7 +4,7 @@ package middleware
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/roguepikachu/bonsai/internal/utils"
+	ctxutil "github.com/roguepikachu/bonsai/internal/utils"
 )
 
 const (
@@ -26,8 +26,8 @@ func RequestIDMiddleware() gin.HandlerFunc {
 			clientID = uuid.New().String()
 		}
 		// Propagate via context and response headers
-		ctx := utils.WithRequestID(c.Request.Context(), requestID)
-		ctx = utils.WithClientID(ctx, clientID)
+		ctx := ctxutil.WithRequestID(c.Request.Context(), requestID)
+		ctx = ctxutil.WithClientID(ctx, clientID)
 		c.Request = c.Request.WithContext(ctx)
 		c.Header(headerRequestID, requestID)
 		c.Header(headerClientID, clientID)
