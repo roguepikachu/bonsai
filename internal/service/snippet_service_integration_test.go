@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -23,23 +24,38 @@ func TestService_IntegrationPostgres(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	// Start PostgreSQL container
-	pg, err := tcpostgres.RunContainer(ctx,
-		tcpostgres.WithUsername("bonsai"),
-		tcpostgres.WithPassword("secret"),
-		tcpostgres.WithDatabase("bonsai"),
-	)
-	if err != nil {
-		t.Skipf("skipping: cannot start postgres container: %v", err)
-		return
-	}
-	defer pg.Terminate(ctx)
+	var dsn string
+	var pool *pgxpool.Pool
+	var err error
 
-	// Connect to PostgreSQL
-	host, _ := pg.Host(ctx)
-	port, _ := pg.MappedPort(ctx, "5432")
-	dsn := fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
-	pool, err := pgxpool.New(ctx, dsn)
+	// Check if running in CI environment
+	if os.Getenv("CI") == "true" {
+		// Use the existing database service in CI
+		dsn = os.Getenv("DATABASE_URL")
+		if dsn == "" {
+			t.Skip("DATABASE_URL not set in CI environment")
+			return
+		}
+		pool, err = pgxpool.New(ctx, dsn)
+	} else {
+		// Start PostgreSQL container for local testing
+		pg, err := tcpostgres.RunContainer(ctx,
+			tcpostgres.WithUsername("bonsai"),
+			tcpostgres.WithPassword("secret"),
+			tcpostgres.WithDatabase("bonsai"),
+		)
+		if err != nil {
+			t.Skipf("skipping: cannot start postgres container: %v", err)
+			return
+		}
+		defer pg.Terminate(ctx)
+
+		// Connect to PostgreSQL
+		host, _ := pg.Host(ctx)
+		port, _ := pg.MappedPort(ctx, "5432")
+		dsn = fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
+		pool, err = pgxpool.New(ctx, dsn)
+	}
 	if err != nil {
 		t.Fatalf("Failed to connect to postgres: %v", err)
 	}
@@ -62,7 +78,8 @@ func TestService_IntegrationPostgres(t *testing.T) {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 
-	clock := &fixedClock{now: time.Date(2025, 9, 4, 12, 0, 0, 0, time.UTC)}
+	// Use RealClock for integration tests to match database NOW()
+	clock := RealClock{}
 	svc := NewService(repo, clock)
 
 	t.Run("CreateAndRetrieveSnippet", func(t *testing.T) {
@@ -156,23 +173,38 @@ func TestService_IntegrationRedisCache(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	// Start PostgreSQL container
-	pg, err := tcpostgres.RunContainer(ctx,
-		tcpostgres.WithUsername("bonsai"),
-		tcpostgres.WithPassword("secret"),
-		tcpostgres.WithDatabase("bonsai"),
-	)
-	if err != nil {
-		t.Skipf("skipping: cannot start postgres container: %v", err)
-		return
-	}
-	defer pg.Terminate(ctx)
+	var dsn string
+	var pool *pgxpool.Pool
+	var err error
 
-	// Connect to PostgreSQL
-	host, _ := pg.Host(ctx)
-	port, _ := pg.MappedPort(ctx, "5432")
-	dsn := fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
-	pool, err := pgxpool.New(ctx, dsn)
+	// Check if running in CI environment
+	if os.Getenv("CI") == "true" {
+		// Use the existing database service in CI
+		dsn = os.Getenv("DATABASE_URL")
+		if dsn == "" {
+			t.Skip("DATABASE_URL not set in CI environment")
+			return
+		}
+		pool, err = pgxpool.New(ctx, dsn)
+	} else {
+		// Start PostgreSQL container for local testing
+		pg, err := tcpostgres.RunContainer(ctx,
+			tcpostgres.WithUsername("bonsai"),
+			tcpostgres.WithPassword("secret"),
+			tcpostgres.WithDatabase("bonsai"),
+		)
+		if err != nil {
+			t.Skipf("skipping: cannot start postgres container: %v", err)
+			return
+		}
+		defer pg.Terminate(ctx)
+
+		// Connect to PostgreSQL
+		host, _ := pg.Host(ctx)
+		port, _ := pg.MappedPort(ctx, "5432")
+		dsn = fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
+		pool, err = pgxpool.New(ctx, dsn)
+	}
 	if err != nil {
 		t.Fatalf("Failed to connect to postgres: %v", err)
 	}
@@ -189,12 +221,28 @@ func TestService_IntegrationRedisCache(t *testing.T) {
 		}
 	}
 
-	// Start mini Redis server
-	miniRedis, err := miniredis.Run()
-	if err != nil {
-		t.Fatalf("Failed to start miniredis: %v", err)
+	// Setup Redis client
+	var rdb *redis.Client
+	if os.Getenv("CI") == "true" && os.Getenv("REDIS_URL") != "" {
+		// Use existing Redis service in CI
+		opt, err := redis.ParseURL(os.Getenv("REDIS_URL"))
+		if err != nil {
+			t.Fatalf("Failed to parse REDIS_URL: %v", err)
+		}
+		rdb = redis.NewClient(opt)
+	} else {
+		// Start mini Redis server for local testing
+		miniRedis, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("Failed to start miniredis: %v", err)
+		}
+		defer miniRedis.Close()
+		
+		rdb = redis.NewClient(&redis.Options{
+			Addr: miniRedis.Addr(),
+		})
 	}
-	defer miniRedis.Close()
+	defer rdb.Close()
 
 	// Setup repository and service with caching
 	pgRepo := postgresRepo.NewSnippetRepository(pool)
@@ -202,13 +250,9 @@ func TestService_IntegrationRedisCache(t *testing.T) {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 
-	rdb := redis.NewClient(&redis.Options{
-		Addr: miniRedis.Addr(),
-	})
-	defer rdb.Close()
-
 	cachedRepo := cachedRepo.NewSnippetRepository(pgRepo, rdb, 5*time.Minute)
-	clock := &fixedClock{now: time.Date(2025, 9, 4, 12, 0, 0, 0, time.UTC)}
+	// Use RealClock for integration tests to match database NOW()
+	clock := RealClock{}
 	svc := NewService(cachedRepo, clock)
 
 	t.Run("CacheHitAndMiss", func(t *testing.T) {
@@ -284,23 +328,38 @@ func TestService_IntegrationConcurrentAccess(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	// Start PostgreSQL container
-	pg, err := tcpostgres.RunContainer(ctx,
-		tcpostgres.WithUsername("bonsai"),
-		tcpostgres.WithPassword("secret"),
-		tcpostgres.WithDatabase("bonsai"),
-	)
-	if err != nil {
-		t.Skipf("skipping: cannot start postgres container: %v", err)
-		return
-	}
-	defer pg.Terminate(ctx)
+	var dsn string
+	var pool *pgxpool.Pool
+	var err error
 
-	// Connect to PostgreSQL
-	host, _ := pg.Host(ctx)
-	port, _ := pg.MappedPort(ctx, "5432")
-	dsn := fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
-	pool, err := pgxpool.New(ctx, dsn)
+	// Check if running in CI environment
+	if os.Getenv("CI") == "true" {
+		// Use the existing database service in CI
+		dsn = os.Getenv("DATABASE_URL")
+		if dsn == "" {
+			t.Skip("DATABASE_URL not set in CI environment")
+			return
+		}
+		pool, err = pgxpool.New(ctx, dsn)
+	} else {
+		// Start PostgreSQL container for local testing
+		pg, err := tcpostgres.RunContainer(ctx,
+			tcpostgres.WithUsername("bonsai"),
+			tcpostgres.WithPassword("secret"),
+			tcpostgres.WithDatabase("bonsai"),
+		)
+		if err != nil {
+			t.Skipf("skipping: cannot start postgres container: %v", err)
+			return
+		}
+		defer pg.Terminate(ctx)
+
+		// Connect to PostgreSQL
+		host, _ := pg.Host(ctx)
+		port, _ := pg.MappedPort(ctx, "5432")
+		dsn = fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
+		pool, err = pgxpool.New(ctx, dsn)
+	}
 	if err != nil {
 		t.Fatalf("Failed to connect to postgres: %v", err)
 	}
@@ -441,23 +500,40 @@ func TestService_DatabaseConnectionHandling(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	// Start PostgreSQL container
-	pg, err := tcpostgres.RunContainer(ctx,
-		tcpostgres.WithUsername("bonsai"),
-		tcpostgres.WithPassword("secret"),
-		tcpostgres.WithDatabase("bonsai"),
-	)
-	if err != nil {
-		t.Skipf("skipping: cannot start postgres container: %v", err)
-		return
-	}
-	defer pg.Terminate(ctx)
+	var dsn string
+	var pool *pgxpool.Pool
+	var err error
 
-	// Connect to PostgreSQL with limited connection pool
-	host, _ := pg.Host(ctx)
-	port, _ := pg.MappedPort(ctx, "5432")
-	dsn := fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable&pool_max_conns=5", host, port.Port())
-	pool, err := pgxpool.New(ctx, dsn)
+	// Check if running in CI environment
+	if os.Getenv("CI") == "true" {
+		// Use the existing database service in CI with limited connection pool
+		baseDsn := os.Getenv("DATABASE_URL")
+		if baseDsn == "" {
+			t.Skip("DATABASE_URL not set in CI environment")
+			return
+		}
+		// Add connection pool limit to the DSN
+		dsn = baseDsn + "&pool_max_conns=5"
+		pool, err = pgxpool.New(ctx, dsn)
+	} else {
+		// Start PostgreSQL container for local testing
+		pg, err := tcpostgres.RunContainer(ctx,
+			tcpostgres.WithUsername("bonsai"),
+			tcpostgres.WithPassword("secret"),
+			tcpostgres.WithDatabase("bonsai"),
+		)
+		if err != nil {
+			t.Skipf("skipping: cannot start postgres container: %v", err)
+			return
+		}
+		defer pg.Terminate(ctx)
+
+		// Connect to PostgreSQL with limited connection pool
+		host, _ := pg.Host(ctx)
+		port, _ := pg.MappedPort(ctx, "5432")
+		dsn = fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable&pool_max_conns=5", host, port.Port())
+		pool, err = pgxpool.New(ctx, dsn)
+	}
 	if err != nil {
 		t.Fatalf("Failed to connect to postgres: %v", err)
 	}
@@ -545,23 +621,38 @@ func TestService_ErrorHandling(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	// Start PostgreSQL container
-	pg, err := tcpostgres.RunContainer(ctx,
-		tcpostgres.WithUsername("bonsai"),
-		tcpostgres.WithPassword("secret"),
-		tcpostgres.WithDatabase("bonsai"),
-	)
-	if err != nil {
-		t.Skipf("skipping: cannot start postgres container: %v", err)
-		return
-	}
-	defer pg.Terminate(ctx)
+	var dsn string
+	var pool *pgxpool.Pool
+	var err error
 
-	// Connect to PostgreSQL
-	host, _ := pg.Host(ctx)
-	port, _ := pg.MappedPort(ctx, "5432")
-	dsn := fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
-	pool, err := pgxpool.New(ctx, dsn)
+	// Check if running in CI environment
+	if os.Getenv("CI") == "true" {
+		// Use the existing database service in CI
+		dsn = os.Getenv("DATABASE_URL")
+		if dsn == "" {
+			t.Skip("DATABASE_URL not set in CI environment")
+			return
+		}
+		pool, err = pgxpool.New(ctx, dsn)
+	} else {
+		// Start PostgreSQL container for local testing
+		pg, err := tcpostgres.RunContainer(ctx,
+			tcpostgres.WithUsername("bonsai"),
+			tcpostgres.WithPassword("secret"),
+			tcpostgres.WithDatabase("bonsai"),
+		)
+		if err != nil {
+			t.Skipf("skipping: cannot start postgres container: %v", err)
+			return
+		}
+		defer pg.Terminate(ctx)
+
+		// Connect to PostgreSQL
+		host, _ := pg.Host(ctx)
+		port, _ := pg.MappedPort(ctx, "5432")
+		dsn = fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
+		pool, err = pgxpool.New(ctx, dsn)
+	}
 	if err != nil {
 		t.Fatalf("Failed to connect to postgres: %v", err)
 	}
@@ -584,7 +675,8 @@ func TestService_ErrorHandling(t *testing.T) {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 
-	clock := &fixedClock{now: time.Date(2025, 9, 4, 12, 0, 0, 0, time.UTC)}
+	// Use RealClock for integration tests to match database NOW()
+	clock := RealClock{}
 	svc := NewService(repo, clock)
 
 	t.Run("NonExistentSnippet", func(t *testing.T) {
@@ -648,23 +740,38 @@ func TestService_CachePerformance(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	// Start PostgreSQL container
-	pg, err := tcpostgres.RunContainer(ctx,
-		tcpostgres.WithUsername("bonsai"),
-		tcpostgres.WithPassword("secret"),
-		tcpostgres.WithDatabase("bonsai"),
-	)
-	if err != nil {
-		t.Skipf("skipping: cannot start postgres container: %v", err)
-		return
-	}
-	defer pg.Terminate(ctx)
+	var dsn string
+	var pool *pgxpool.Pool
+	var err error
 
-	// Connect to PostgreSQL
-	host, _ := pg.Host(ctx)
-	port, _ := pg.MappedPort(ctx, "5432")
-	dsn := fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
-	pool, err := pgxpool.New(ctx, dsn)
+	// Check if running in CI environment
+	if os.Getenv("CI") == "true" {
+		// Use the existing database service in CI
+		dsn = os.Getenv("DATABASE_URL")
+		if dsn == "" {
+			t.Skip("DATABASE_URL not set in CI environment")
+			return
+		}
+		pool, err = pgxpool.New(ctx, dsn)
+	} else {
+		// Start PostgreSQL container for local testing
+		pg, err := tcpostgres.RunContainer(ctx,
+			tcpostgres.WithUsername("bonsai"),
+			tcpostgres.WithPassword("secret"),
+			tcpostgres.WithDatabase("bonsai"),
+		)
+		if err != nil {
+			t.Skipf("skipping: cannot start postgres container: %v", err)
+			return
+		}
+		defer pg.Terminate(ctx)
+
+		// Connect to PostgreSQL
+		host, _ := pg.Host(ctx)
+		port, _ := pg.MappedPort(ctx, "5432")
+		dsn = fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
+		pool, err = pgxpool.New(ctx, dsn)
+	}
 	if err != nil {
 		t.Fatalf("Failed to connect to postgres: %v", err)
 	}
@@ -687,20 +794,32 @@ func TestService_CachePerformance(t *testing.T) {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 
-	// Start mini Redis server
-	miniRedis, err := miniredis.Run()
-	if err != nil {
-		t.Fatalf("Failed to start miniredis: %v", err)
+	// Setup Redis client
+	var rdb *redis.Client
+	if os.Getenv("CI") == "true" && os.Getenv("REDIS_URL") != "" {
+		// Use existing Redis service in CI
+		opt, err := redis.ParseURL(os.Getenv("REDIS_URL"))
+		if err != nil {
+			t.Fatalf("Failed to parse REDIS_URL: %v", err)
+		}
+		rdb = redis.NewClient(opt)
+	} else {
+		// Start mini Redis server for local testing
+		miniRedis, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("Failed to start miniredis: %v", err)
+		}
+		defer miniRedis.Close()
+		
+		rdb = redis.NewClient(&redis.Options{
+			Addr: miniRedis.Addr(),
+		})
 	}
-	defer miniRedis.Close()
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr: miniRedis.Addr(),
-	})
 	defer rdb.Close()
 
 	cachedRepo := cachedRepo.NewSnippetRepository(pgRepo, rdb, 5*time.Minute)
-	clock := &fixedClock{now: time.Date(2025, 9, 4, 12, 0, 0, 0, time.UTC)}
+	// Use RealClock for integration tests to match database NOW()
+	clock := RealClock{}
 
 	// Services with and without cache
 	svcCached := NewService(cachedRepo, clock)
@@ -761,23 +880,38 @@ func TestService_DataConsistency(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	// Start PostgreSQL container
-	pg, err := tcpostgres.RunContainer(ctx,
-		tcpostgres.WithUsername("bonsai"),
-		tcpostgres.WithPassword("secret"),
-		tcpostgres.WithDatabase("bonsai"),
-	)
-	if err != nil {
-		t.Skipf("skipping: cannot start postgres container: %v", err)
-		return
-	}
-	defer pg.Terminate(ctx)
+	var dsn string
+	var pool *pgxpool.Pool
+	var err error
 
-	// Connect to PostgreSQL
-	host, _ := pg.Host(ctx)
-	port, _ := pg.MappedPort(ctx, "5432")
-	dsn := fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
-	pool, err := pgxpool.New(ctx, dsn)
+	// Check if running in CI environment
+	if os.Getenv("CI") == "true" {
+		// Use the existing database service in CI
+		dsn = os.Getenv("DATABASE_URL")
+		if dsn == "" {
+			t.Skip("DATABASE_URL not set in CI environment")
+			return
+		}
+		pool, err = pgxpool.New(ctx, dsn)
+	} else {
+		// Start PostgreSQL container for local testing
+		pg, err := tcpostgres.RunContainer(ctx,
+			tcpostgres.WithUsername("bonsai"),
+			tcpostgres.WithPassword("secret"),
+			tcpostgres.WithDatabase("bonsai"),
+		)
+		if err != nil {
+			t.Skipf("skipping: cannot start postgres container: %v", err)
+			return
+		}
+		defer pg.Terminate(ctx)
+
+		// Connect to PostgreSQL
+		host, _ := pg.Host(ctx)
+		port, _ := pg.MappedPort(ctx, "5432")
+		dsn = fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
+		pool, err = pgxpool.New(ctx, dsn)
+	}
 	if err != nil {
 		t.Fatalf("Failed to connect to postgres: %v", err)
 	}
@@ -800,20 +934,32 @@ func TestService_DataConsistency(t *testing.T) {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 
-	// Start mini Redis server
-	miniRedis, err := miniredis.Run()
-	if err != nil {
-		t.Fatalf("Failed to start miniredis: %v", err)
+	// Setup Redis client
+	var rdb *redis.Client
+	if os.Getenv("CI") == "true" && os.Getenv("REDIS_URL") != "" {
+		// Use existing Redis service in CI
+		opt, err := redis.ParseURL(os.Getenv("REDIS_URL"))
+		if err != nil {
+			t.Fatalf("Failed to parse REDIS_URL: %v", err)
+		}
+		rdb = redis.NewClient(opt)
+	} else {
+		// Start mini Redis server for local testing
+		miniRedis, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("Failed to start miniredis: %v", err)
+		}
+		defer miniRedis.Close()
+		
+		rdb = redis.NewClient(&redis.Options{
+			Addr: miniRedis.Addr(),
+		})
 	}
-	defer miniRedis.Close()
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr: miniRedis.Addr(),
-	})
 	defer rdb.Close()
 
 	cachedRepo := cachedRepo.NewSnippetRepository(pgRepo, rdb, 5*time.Minute)
-	clock := &fixedClock{now: time.Date(2025, 9, 4, 12, 0, 0, 0, time.UTC)}
+	// Use RealClock for integration tests to match database NOW()
+	clock := RealClock{}
 
 	// Services with and without cache
 	svcCached := NewService(cachedRepo, clock)
