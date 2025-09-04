@@ -74,12 +74,14 @@ test-unit: ## Run unit tests (fast, no external services)
 	@echo "$(COLOR_BLUE)Running unit tests...$(COLOR_RESET)"
 	$(GO) test -race -short $(PKG)
 
-test-integration: services ## Run integration tests (requires services)
+test-integration: ## Run integration tests (requires services)
 	@echo "$(COLOR_BLUE)Running integration tests...$(COLOR_RESET)"
+	@if [ -z "$$CI" ]; then $(MAKE) services; fi
 	$(GO) test -tags=integration -race $(PKG)
 
 test-acceptance: ## Run full acceptance tests (auto-manages services)
 	@echo "$(COLOR_BLUE)Running acceptance tests...$(COLOR_RESET)"
+	@if [ -z "$$CI" ]; then $(MAKE) services; fi
 	$(GO) test -race -v ./internal/http/acceptance
 
 coverage: ## Generate test coverage report

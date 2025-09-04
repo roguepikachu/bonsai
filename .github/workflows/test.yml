@@ -123,6 +123,7 @@ jobs:
     - name: Run integration tests with coverage
       run: make test-integration
       env:
+        CI: true
         DATABASE_URL: postgres://bonsai:bonsai@localhost:5432/bonsai_test?sslmode=disable
         REDIS_URL: redis://localhost:6379
 
@@ -134,6 +135,31 @@ jobs:
 
   acceptance-tests:
     runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bonsai
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6380:6379
     
     steps:
     - uses: actions/checkout@v4
@@ -156,13 +182,14 @@ jobs:
     - name: Download dependencies
       run: go mod download
 
-    - name: Install Docker Compose
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y docker-compose
-
     - name: Run acceptance tests
       run: make test-acceptance
+      env:
+        CI: true
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/bonsai?sslmode=disable
+        REDIS_URL: redis://localhost:6380
+        REDIS_PORT: 6380
+        BONSAI_PORT: 8080
 
   coverage-report:
     runs-on: ubuntu-latest

@@ -25,10 +25,17 @@ import (
 	"github.com/roguepikachu/bonsai/internal/service"
 )
 
-const (
-	testDatabaseURL = "postgres://postgres:postgres@localhost:5432/bonsai_test?sslmode=disable"
-	testRedisURL    = "redis://localhost:6379/1" // Use DB 1 for tests to avoid conflicts with dev data
+var (
+	testDatabaseURL = getEnvOrDefault("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/bonsai_test?sslmode=disable")
+	testRedisURL    = getEnvOrDefault("REDIS_URL", "redis://localhost:6379/1") // Use DB 1 for tests to avoid conflicts with dev data
 )
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
 
 var (
 	testServer *http.Server
@@ -47,23 +54,29 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
-	// Start services
-	if err := startServices(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start services: %v\n", err)
-		os.Exit(1)
+	// Start services (skip in CI as they're provided by GitHub Actions)
+	if os.Getenv("CI") != "true" {
+		if err := startServices(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to start services: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Wait for services to be ready
 	if err := waitForServices(); err != nil {
 		fmt.Fprintf(os.Stderr, "Services not ready: %v\n", err)
-		stopServices()
+		if os.Getenv("CI") != "true" {
+			stopServices()
+		}
 		os.Exit(1)
 	}
 
 	// Start test server
 	if err := startTestServer(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start test server: %v\n", err)
-		stopServices()
+		if os.Getenv("CI") != "true" {
+			stopServices()
+		}
 		os.Exit(1)
 	}
 
@@ -72,7 +85,9 @@ func TestMain(m *testing.M) {
 
 	// Cleanup
 	stopTestServer()
-	stopServices()
+	if os.Getenv("CI") != "true" {
+		stopServices()
+	}
 
 	os.Exit(code)
 }
