@@ -21,7 +21,10 @@ import (
 
 // TestService_IntegrationPostgres tests the service layer with real PostgreSQL
 func TestService_IntegrationPostgres(t *testing.T) {
-	t.Parallel()
+	// Don't run in parallel when using shared database in CI
+	if os.Getenv("CI") != "true" {
+		t.Parallel()
+	}
 	ctx := context.Background()
 
 	var dsn string
@@ -170,7 +173,10 @@ func TestService_IntegrationPostgres(t *testing.T) {
 
 // TestService_IntegrationRedisCache tests the service with Redis caching
 func TestService_IntegrationRedisCache(t *testing.T) {
-	t.Parallel()
+	// Don't run in parallel when using shared database in CI
+	if os.Getenv("CI") != "true" {
+		t.Parallel()
+	}
 	ctx := context.Background()
 
 	var dsn string
@@ -325,7 +331,10 @@ func TestService_IntegrationRedisCache(t *testing.T) {
 
 // TestService_IntegrationConcurrentAccess tests concurrent access with real databases
 func TestService_IntegrationConcurrentAccess(t *testing.T) {
-	t.Parallel()
+	// Don't run in parallel when using shared database in CI
+	if os.Getenv("CI") != "true" {
+		t.Parallel()
+	}
 	ctx := context.Background()
 
 	var dsn string
@@ -497,7 +506,10 @@ func TestService_IntegrationConcurrentAccess(t *testing.T) {
 
 // TestService_DatabaseConnectionHandling tests connection pool behavior
 func TestService_DatabaseConnectionHandling(t *testing.T) {
-	t.Parallel()
+	// Don't run in parallel when using shared database in CI
+	if os.Getenv("CI") != "true" {
+		t.Parallel()
+	}
 	ctx := context.Background()
 
 	var dsn string
@@ -618,7 +630,10 @@ func (f *fixedClock) Now() time.Time {
 
 // TestService_ErrorHandling tests various error conditions with real databases
 func TestService_ErrorHandling(t *testing.T) {
-	t.Parallel()
+	// Don't run in parallel when using shared database in CI
+	if os.Getenv("CI") != "true" {
+		t.Parallel()
+	}
 	ctx := context.Background()
 
 	var dsn string
@@ -737,7 +752,10 @@ func TestService_ErrorHandling(t *testing.T) {
 
 // TestService_CachePerformance tests caching performance improvements
 func TestService_CachePerformance(t *testing.T) {
-	t.Parallel()
+	// Don't run in parallel when using shared database in CI
+	if os.Getenv("CI") != "true" {
+		t.Parallel()
+	}
 	ctx := context.Background()
 
 	var dsn string
@@ -877,7 +895,10 @@ func TestService_CachePerformance(t *testing.T) {
 
 // TestService_DataConsistency tests data consistency across cache and database
 func TestService_DataConsistency(t *testing.T) {
-	t.Parallel()
+	// Don't run in parallel when using shared database in CI
+	if os.Getenv("CI") != "true" {
+		t.Parallel()
+	}
 	ctx := context.Background()
 
 	var dsn string
