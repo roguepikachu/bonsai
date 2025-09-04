@@ -513,6 +513,618 @@ func TestFakeRepo_ConcurrentAccess(t *testing.T) {
 	}
 }
 
+func TestFakeRepo_Update_Basic(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert initial snippet
+	original := domain.Snippet{
+		ID:        "update1",
+		Content:   "original content",
+		CreatedAt: now,
+		Tags:      []string{"original", "tag"},
+		ExpiresAt: now.Add(time.Hour),
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert original: %v", err)
+	}
+
+	// Update the snippet
+	updated := domain.Snippet{
+		ID:        "update1",
+		Content:   "updated content",
+		CreatedAt: now, // Should preserve this
+		Tags:      []string{"updated", "tag"},
+		ExpiresAt: now.Add(2 * time.Hour),
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	// Verify the update
+	got, err := r.FindByID(ctx, "update1")
+	if err != nil {
+		t.Fatalf("find after update: %v", err)
+	}
+	if got.Content != "updated content" {
+		t.Fatalf("expected 'updated content', got %s", got.Content)
+	}
+	if len(got.Tags) != 2 || got.Tags[0] != "updated" || got.Tags[1] != "tag" {
+		t.Fatalf("expected tags [updated, tag], got %v", got.Tags)
+	}
+	if !got.ExpiresAt.Equal(now.Add(2 * time.Hour)) {
+		t.Fatalf("expected expires at %v, got %v", now.Add(2*time.Hour), got.ExpiresAt)
+	}
+}
+
+func TestFakeRepo_Update_NotFound(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Try to update non-existent snippet
+	snippet := domain.Snippet{
+		ID:        "nonexistent",
+		Content:   "some content",
+		CreatedAt: now,
+	}
+	err := r.Update(ctx, snippet)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestFakeRepo_Update_EmptyID(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Try to update with empty ID
+	snippet := domain.Snippet{
+		ID:        "",
+		Content:   "some content",
+		CreatedAt: now,
+	}
+	err := r.Update(ctx, snippet)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for empty ID, got %v", err)
+	}
+}
+
+func TestFakeRepo_Update_UnicodeContent(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet
+	original := domain.Snippet{
+		ID:        "unicode1",
+		Content:   "simple",
+		CreatedAt: now,
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Update with unicode content
+	updated := domain.Snippet{
+		ID:        "unicode1",
+		Content:   "🚀 こんにちは 世界 🌍 عالم 🎯",
+		CreatedAt: now,
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update with unicode: %v", err)
+	}
+
+	// Verify update
+	got, err := r.FindByID(ctx, "unicode1")
+	if err != nil {
+		t.Fatalf("find after unicode update: %v", err)
+	}
+	if got.Content != "🚀 こんにちは 世界 🌍 عالم 🎯" {
+		t.Fatalf("unicode content not preserved: %s", got.Content)
+	}
+}
+
+func TestFakeRepo_Update_LargeContent(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet
+	original := domain.Snippet{
+		ID:        "large1",
+		Content:   "small",
+		CreatedAt: now,
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Create large content (10KB)
+	largeContent := make([]byte, 10240)
+	for i := range largeContent {
+		largeContent[i] = byte('A' + (i % 26))
+	}
+
+	// Update with large content
+	updated := domain.Snippet{
+		ID:        "large1",
+		Content:   string(largeContent),
+		CreatedAt: now,
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update with large content: %v", err)
+	}
+
+	// Verify update
+	got, err := r.FindByID(ctx, "large1")
+	if err != nil {
+		t.Fatalf("find after large update: %v", err)
+	}
+	if len(got.Content) != 10240 {
+		t.Fatalf("expected content length 10240, got %d", len(got.Content))
+	}
+	if got.Content[:5] != "ABCDE" {
+		t.Fatalf("large content pattern incorrect: %s", got.Content[:5])
+	}
+}
+
+func TestFakeRepo_Update_EmptyContent(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet
+	original := domain.Snippet{
+		ID:        "empty1",
+		Content:   "original content",
+		CreatedAt: now,
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Update with empty content
+	updated := domain.Snippet{
+		ID:        "empty1",
+		Content:   "",
+		CreatedAt: now,
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update with empty content: %v", err)
+	}
+
+	// Verify update
+	got, err := r.FindByID(ctx, "empty1")
+	if err != nil {
+		t.Fatalf("find after empty update: %v", err)
+	}
+	if got.Content != "" {
+		t.Fatalf("expected empty content, got %s", got.Content)
+	}
+}
+
+func TestFakeRepo_Update_EmptyTags(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet with tags
+	original := domain.Snippet{
+		ID:        "tags1",
+		Content:   "content",
+		CreatedAt: now,
+		Tags:      []string{"tag1", "tag2"},
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Update with empty tags
+	updated := domain.Snippet{
+		ID:        "tags1",
+		Content:   "updated content",
+		CreatedAt: now,
+		Tags:      []string{},
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update with empty tags: %v", err)
+	}
+
+	// Verify update
+	got, err := r.FindByID(ctx, "tags1")
+	if err != nil {
+		t.Fatalf("find after empty tags update: %v", err)
+	}
+	if len(got.Tags) != 0 {
+		t.Fatalf("expected empty tags, got %v", got.Tags)
+	}
+}
+
+func TestFakeRepo_Update_NilTags(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet with tags
+	original := domain.Snippet{
+		ID:        "niltags1",
+		Content:   "content",
+		CreatedAt: now,
+		Tags:      []string{"tag1", "tag2"},
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Update with nil tags
+	updated := domain.Snippet{
+		ID:        "niltags1",
+		Content:   "updated content",
+		CreatedAt: now,
+		Tags:      nil,
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update with nil tags: %v", err)
+	}
+
+	// Verify update
+	got, err := r.FindByID(ctx, "niltags1")
+	if err != nil {
+		t.Fatalf("find after nil tags update: %v", err)
+	}
+	if got.Tags != nil && len(got.Tags) != 0 {
+		t.Fatalf("expected nil or empty tags, got %v", got.Tags)
+	}
+}
+
+func TestFakeRepo_Update_ManyTags(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet
+	original := domain.Snippet{
+		ID:        "manytags1",
+		Content:   "content",
+		CreatedAt: now,
+		Tags:      []string{"tag1"},
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Update with many tags
+	manyTags := make([]string, 50)
+	for i := range manyTags {
+		manyTags[i] = fmt.Sprintf("tag%d", i)
+	}
+
+	updated := domain.Snippet{
+		ID:        "manytags1",
+		Content:   "updated content",
+		CreatedAt: now,
+		Tags:      manyTags,
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update with many tags: %v", err)
+	}
+
+	// Verify update
+	got, err := r.FindByID(ctx, "manytags1")
+	if err != nil {
+		t.Fatalf("find after many tags update: %v", err)
+	}
+	if len(got.Tags) != 50 {
+		t.Fatalf("expected 50 tags, got %d", len(got.Tags))
+	}
+	if got.Tags[0] != "tag0" || got.Tags[49] != "tag49" {
+		t.Fatalf("tag ordering incorrect: first=%s, last=%s", got.Tags[0], got.Tags[len(got.Tags)-1])
+	}
+}
+
+func TestFakeRepo_Update_SpecialCharacterTags(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet
+	original := domain.Snippet{
+		ID:        "special1",
+		Content:   "content",
+		CreatedAt: now,
+		Tags:      []string{"normal"},
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Update with special character tags
+	updated := domain.Snippet{
+		ID:        "special1",
+		Content:   "updated content",
+		CreatedAt: now,
+		Tags:      []string{"tag-with-dashes", "tag_with_underscores", "tag.with.dots", "tag@with@symbols", "🚀emoji-tag"},
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update with special tags: %v", err)
+	}
+
+	// Verify update
+	got, err := r.FindByID(ctx, "special1")
+	if err != nil {
+		t.Fatalf("find after special tags update: %v", err)
+	}
+	expectedTags := []string{"tag-with-dashes", "tag_with_underscores", "tag.with.dots", "tag@with@symbols", "🚀emoji-tag"}
+	if len(got.Tags) != len(expectedTags) {
+		t.Fatalf("expected %d tags, got %d", len(expectedTags), len(got.Tags))
+	}
+	for i, expected := range expectedTags {
+		if got.Tags[i] != expected {
+			t.Fatalf("expected tag %s at position %d, got %s", expected, i, got.Tags[i])
+		}
+	}
+}
+
+func TestFakeRepo_Update_ZeroExpiresAt(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet with expiration
+	original := domain.Snippet{
+		ID:        "zeroexp1",
+		Content:   "content",
+		CreatedAt: now,
+		ExpiresAt: now.Add(time.Hour),
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Update with zero ExpiresAt (no expiration)
+	updated := domain.Snippet{
+		ID:        "zeroexp1",
+		Content:   "updated content",
+		CreatedAt: now,
+		ExpiresAt: time.Time{}, // Zero value means no expiration
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update with zero expires: %v", err)
+	}
+
+	// Verify update
+	got, err := r.FindByID(ctx, "zeroexp1")
+	if err != nil {
+		t.Fatalf("find after zero expires update: %v", err)
+	}
+	if !got.ExpiresAt.IsZero() {
+		t.Fatalf("expected zero ExpiresAt, got %v", got.ExpiresAt)
+	}
+}
+
+func TestFakeRepo_Update_FutureExpiresAt(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet
+	original := domain.Snippet{
+		ID:        "future1",
+		Content:   "content",
+		CreatedAt: now,
+		ExpiresAt: now.Add(time.Hour),
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Update with far future expiration
+	futureTime := now.Add(365 * 24 * time.Hour) // 1 year
+	updated := domain.Snippet{
+		ID:        "future1",
+		Content:   "updated content",
+		CreatedAt: now,
+		ExpiresAt: futureTime,
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update with future expires: %v", err)
+	}
+
+	// Verify update
+	got, err := r.FindByID(ctx, "future1")
+	if err != nil {
+		t.Fatalf("find after future expires update: %v", err)
+	}
+	if !got.ExpiresAt.Equal(futureTime) {
+		t.Fatalf("expected ExpiresAt %v, got %v", futureTime, got.ExpiresAt)
+	}
+}
+
+func TestFakeRepo_Update_PastExpiresAt(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet
+	original := domain.Snippet{
+		ID:        "past1",
+		Content:   "content",
+		CreatedAt: now,
+		ExpiresAt: now.Add(time.Hour),
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Update with past expiration (already expired)
+	pastTime := now.Add(-time.Hour)
+	updated := domain.Snippet{
+		ID:        "past1",
+		Content:   "updated content",
+		CreatedAt: now,
+		ExpiresAt: pastTime,
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update with past expires: %v", err)
+	}
+
+	// Verify update (should still work even if expired)
+	got, err := r.FindByID(ctx, "past1")
+	if err != nil {
+		t.Fatalf("find after past expires update: %v", err)
+	}
+	if !got.ExpiresAt.Equal(pastTime) {
+		t.Fatalf("expected ExpiresAt %v, got %v", pastTime, got.ExpiresAt)
+	}
+}
+
+func TestFakeRepo_Update_PreservesCreatedAt(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	originalTime := time.Now().Add(-2 * time.Hour)
+	updateTime := time.Now()
+
+	// Insert snippet
+	original := domain.Snippet{
+		ID:        "preserve1",
+		Content:   "content",
+		CreatedAt: originalTime,
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Update with different CreatedAt (should preserve original)
+	updated := domain.Snippet{
+		ID:        "preserve1",
+		Content:   "updated content",
+		CreatedAt: updateTime, // This should be ignored
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	// Verify CreatedAt was preserved
+	got, err := r.FindByID(ctx, "preserve1")
+	if err != nil {
+		t.Fatalf("find after update: %v", err)
+	}
+	if !got.CreatedAt.Equal(originalTime) {
+		t.Fatalf("expected CreatedAt %v, got %v", originalTime, got.CreatedAt)
+	}
+	if got.Content != "updated content" {
+		t.Fatalf("expected updated content, got %s", got.Content)
+	}
+}
+
+func TestFakeRepo_Update_MultipleUpdates(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet
+	original := domain.Snippet{
+		ID:        "multiple1",
+		Content:   "version1",
+		CreatedAt: now,
+		Tags:      []string{"v1"},
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// First update
+	update1 := domain.Snippet{
+		ID:        "multiple1",
+		Content:   "version2",
+		CreatedAt: now,
+		Tags:      []string{"v1", "v2"},
+	}
+	if err := r.Update(ctx, update1); err != nil {
+		t.Fatalf("first update: %v", err)
+	}
+
+	// Second update
+	update2 := domain.Snippet{
+		ID:        "multiple1",
+		Content:   "version3",
+		CreatedAt: now,
+		Tags:      []string{"v3"},
+		ExpiresAt: now.Add(time.Hour),
+	}
+	if err := r.Update(ctx, update2); err != nil {
+		t.Fatalf("second update: %v", err)
+	}
+
+	// Third update
+	update3 := domain.Snippet{
+		ID:        "multiple1",
+		Content:   "final version",
+		CreatedAt: now,
+		Tags:      []string{"final"},
+		ExpiresAt: time.Time{}, // Remove expiration
+	}
+	if err := r.Update(ctx, update3); err != nil {
+		t.Fatalf("third update: %v", err)
+	}
+
+	// Verify final state
+	got, err := r.FindByID(ctx, "multiple1")
+	if err != nil {
+		t.Fatalf("find after multiple updates: %v", err)
+	}
+	if got.Content != "final version" {
+		t.Fatalf("expected 'final version', got %s", got.Content)
+	}
+	if len(got.Tags) != 1 || got.Tags[0] != "final" {
+		t.Fatalf("expected tags [final], got %v", got.Tags)
+	}
+	if !got.ExpiresAt.IsZero() {
+		t.Fatalf("expected no expiration, got %v", got.ExpiresAt)
+	}
+	if !got.CreatedAt.Equal(now) {
+		t.Fatalf("CreatedAt should be preserved: expected %v, got %v", now, got.CreatedAt)
+	}
+}
+
+func TestFakeRepo_Update_WhitespaceContent(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet
+	original := domain.Snippet{
+		ID:        "whitespace1",
+		Content:   "normal content",
+		CreatedAt: now,
+	}
+	if err := r.Insert(ctx, original); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Update with various whitespace content
+	updated := domain.Snippet{
+		ID:        "whitespace1",
+		Content:   "\t\n  \r\n\t  ",
+		CreatedAt: now,
+	}
+	if err := r.Update(ctx, updated); err != nil {
+		t.Fatalf("update with whitespace: %v", err)
+	}
+
+	// Verify whitespace is preserved
+	got, err := r.FindByID(ctx, "whitespace1")
+	if err != nil {
+		t.Fatalf("find after whitespace update: %v", err)
+	}
+	if got.Content != "\t\n  \r\n\t  " {
+		t.Fatalf("whitespace not preserved: %q", got.Content)
+	}
+}
+
 func TestContainsTag(t *testing.T) {
 	tests := []struct {
 		name     string

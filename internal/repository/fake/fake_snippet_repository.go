@@ -96,6 +96,18 @@ func containsTag(tags []string, want string) bool {
 	return false
 }
 
+// Update modifies an existing snippet by its ID.
+func (r *SnippetRepository) Update(_ context.Context, s domain.Snippet) error {
+	existing, ok := r.byID[s.ID]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	// Preserve the original CreatedAt timestamp
+	s.CreatedAt = existing.CreatedAt
+	r.byID[s.ID] = s
+	return nil
+}
+
 // DeleteByID removes a snippet by ID (for testing purposes).
 func (r *SnippetRepository) DeleteByID(id string) {
 	delete(r.byID, id)

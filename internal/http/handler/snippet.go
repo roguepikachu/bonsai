@@ -21,6 +21,7 @@ type SnippetService interface {
 	CreateSnippet(ctx context.Context, content string, expiresIn int, tags []string) (domain.Snippet, error)
 	ListSnippets(ctx context.Context, page, limit int, tag string) ([]domain.Snippet, error)
 	GetSnippetByID(ctx context.Context, id string) (domain.Snippet, service.SnippetMeta, error)
+	UpdateSnippet(ctx context.Context, id string, content string, expiresIn int, tags []string) (domain.Snippet, error)
 }
 
 // Handler handles HTTP requests for snippets.
@@ -144,6 +145,52 @@ func (h *Handler) Get(c *gin.Context) {
 	}
 	logger.With(ctx, map[string]any{"id": id, "cache": cacheStatus}).Debug("snippet retrieved")
 	c.Header("X-Cache", cacheStatus)
+	createdAt := snippet.CreatedAt.UTC().Format(TimeFormat)
+	var expiresAt *string
+	if !snippet.ExpiresAt.IsZero() {
+		v := snippet.ExpiresAt.UTC().Format(TimeFormat)
+		expiresAt = &v
+	}
+	resp := domain.SnippetResponseDTO{
+		ID:        snippet.ID,
+		Content:   snippet.Content,
+		CreatedAt: createdAt,
+		ExpiresAt: expiresAt,
+		Tags:      snippet.Tags,
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// Update handles updating an existing snippet by ID.
+func (h *Handler) Update(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "bad_request", "message": "id is required"}})
+		return
+	}
+	var req domain.UpdateSnippetRequestDTO
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "failed to bind JSON: %s", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "bad_request", "message": "invalid request", "details": err.Error()}})
+		return
+	}
+
+	snippet, err := h.svc.UpdateSnippet(ctx, id, req.Content, req.ExpiresIn, req.Tags)
+	if err != nil {
+		if errors.Is(err, service.ErrSnippetNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"code": "not_found", "message": "not found"}})
+			return
+		}
+		if errors.Is(err, service.ErrSnippetExpired) {
+			c.JSON(http.StatusGone, gin.H{"error": gin.H{"code": "gone", "message": "cannot update expired snippet"}})
+			return
+		}
+		logger.Error(ctx, "failed to update snippet: %s", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"code": "internal_error", "message": "internal server error"}})
+		return
+	}
+	logger.With(ctx, map[string]any{"id": snippet.ID, "tags": snippet.Tags}).Info("snippet updated")
 	createdAt := snippet.CreatedAt.UTC().Format(TimeFormat)
 	var expiresAt *string
 	if !snippet.ExpiresAt.IsZero() {

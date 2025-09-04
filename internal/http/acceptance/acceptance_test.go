@@ -620,6 +620,153 @@ func Test_SnippetCRUD(t *testing.T) {
 	verifySnippetNotInRedis(t, "non-existent")
 }
 
+func Test_SnippetUpdate(t *testing.T) {
+	cleanDatabase(t)
+
+	// Verify database is clean
+	initialCount := countSnippetsInDatabase(t)
+	if initialCount != 0 {
+		t.Fatalf("Expected empty database, found %d snippets", initialCount)
+	}
+
+	// Create a snippet first
+	createReq := map[string]any{
+		"content":    "Original content",
+		"expires_in": 300,
+		"tags":       []string{"original", "test"},
+	}
+	var created struct {
+		ID        string   `json:"id"`
+		Content   string   `json:"content"`
+		CreatedAt string   `json:"created_at"`
+		ExpiresAt *string  `json:"expires_at"`
+		Tags      []string `json:"tags"`
+	}
+	code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+	if code != http.StatusCreated {
+		t.Fatalf("Create failed: expected 201, got %d", code)
+	}
+
+	snippetID := created.ID
+	originalCreatedAt := created.CreatedAt
+
+	// Test successful update
+	updateReq := map[string]any{
+		"content":    "Updated content",
+		"expires_in": 600,
+		"tags":       []string{"updated", "modified"},
+	}
+	var updated struct {
+		ID        string   `json:"id"`
+		Content   string   `json:"content"`
+		CreatedAt string   `json:"created_at"`
+		ExpiresAt *string  `json:"expires_at"`
+		Tags      []string `json:"tags"`
+	}
+	code, _ = doJSONRequest(t, http.MethodPut, baseURL+"/v1/snippets/"+snippetID, updateReq, &updated)
+	if code != http.StatusOK {
+		t.Fatalf("Update failed: expected 200, got %d", code)
+	}
+
+	// Verify update response
+	if updated.ID != snippetID {
+		t.Errorf("ID should be preserved: expected %s, got %s", snippetID, updated.ID)
+	}
+	if updated.Content != "Updated content" {
+		t.Errorf("Content not updated: expected 'Updated content', got %s", updated.Content)
+	}
+	if updated.CreatedAt != originalCreatedAt {
+		t.Errorf("CreatedAt should be preserved: expected %s, got %s", originalCreatedAt, updated.CreatedAt)
+	}
+	if len(updated.Tags) != 2 || updated.Tags[0] != "updated" || updated.Tags[1] != "modified" {
+		t.Errorf("Tags not updated correctly: expected [updated modified], got %v", updated.Tags)
+	}
+
+	// Verify updated snippet in database
+	expectedUpdated := domain.Snippet{
+		ID:      snippetID,
+		Content: "Updated content",
+		Tags:    []string{"updated", "modified"},
+	}
+	verifySnippetInDatabase(t, snippetID, expectedUpdated)
+
+	// Verify cached snippet is invalidated by reading again
+	var retrieved struct {
+		ID        string   `json:"id"`
+		Content   string   `json:"content"`
+		CreatedAt string   `json:"created_at"`
+		ExpiresAt *string  `json:"expires_at"`
+		Tags      []string `json:"tags"`
+	}
+	code, hdr := doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets/"+snippetID, nil, &retrieved)
+	if code != http.StatusOK {
+		t.Fatalf("Get after update failed: expected 200, got %d", code)
+	}
+	if retrieved.Content != "Updated content" {
+		t.Errorf("Retrieved content after update: expected 'Updated content', got %s", retrieved.Content)
+	}
+	if hdr.Get("X-Cache") == "" {
+		t.Error("Expected X-Cache header after update")
+	}
+
+	// Test update non-existent snippet
+	var errResp map[string]any
+	code, _ = doJSONRequest(t, http.MethodPut, baseURL+"/v1/snippets/non-existent", updateReq, &errResp)
+	if code != http.StatusNotFound {
+		t.Errorf("Expected 404 for updating non-existent snippet, got %d", code)
+	}
+
+	// Test update with invalid JSON
+	invalidJSON := `{"content":"test", invalid json}`
+	req, _ := http.NewRequest(http.MethodPut, baseURL+"/v1/snippets/"+snippetID, bytes.NewBufferString(invalidJSON))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("HTTP request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("Expected 400 for invalid JSON, got %d", resp.StatusCode)
+	}
+
+	// Test update with empty content
+	emptyContentReq := map[string]any{
+		"content":    "",
+		"expires_in": 300,
+		"tags":       []string{"empty"},
+	}
+	code, _ = doJSONRequest(t, http.MethodPut, baseURL+"/v1/snippets/"+snippetID, emptyContentReq, &errResp)
+	if code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for empty content, got %d", code)
+	}
+
+	// Test update with no expiry
+	noExpiryReq := map[string]any{
+		"content":    "No expiry content",
+		"expires_in": 0,
+		"tags":       []string{"no-expiry"},
+	}
+	var noExpiryUpdated struct {
+		ID        string   `json:"id"`
+		Content   string   `json:"content"`
+		CreatedAt string   `json:"created_at"`
+		ExpiresAt *string  `json:"expires_at"`
+		Tags      []string `json:"tags"`
+	}
+	code, _ = doJSONRequest(t, http.MethodPut, baseURL+"/v1/snippets/"+snippetID, noExpiryReq, &noExpiryUpdated)
+	if code != http.StatusOK {
+		t.Fatalf("Update with no expiry failed: expected 200, got %d", code)
+	}
+	if noExpiryUpdated.ExpiresAt != nil {
+		t.Errorf("Expected no expiry, got %v", *noExpiryUpdated.ExpiresAt)
+	}
+
+	// Verify database count remains 1
+	if countSnippetsInDatabase(t) != 1 {
+		t.Errorf("Expected 1 snippet in database after updates")
+	}
+}
+
 func Test_SnippetValidation(t *testing.T) {
 	cleanDatabase(t)
 
@@ -1501,4 +1648,584 @@ func calculateMax(durations []time.Duration) time.Duration {
 		}
 	}
 	return maxDuration
+}
+
+// Test_SnippetUpdateEdgeCases tests edge cases for the PUT endpoint
+func Test_SnippetUpdateEdgeCases(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create a snippet first
+	createReq := map[string]any{
+		"content":    "Original content for update testing",
+		"expires_in": 300,
+		"tags":       []string{"original", "update-test"},
+	}
+	var created struct {
+		ID        string    `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+	code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+	if code != http.StatusCreated {
+		t.Fatalf("Failed to create initial snippet: %d", code)
+	}
+
+	snippetID := created.ID
+	originalCreatedAt := created.CreatedAt
+
+	testCases := []struct {
+		name           string
+		request        map[string]any
+		expectedStatus int
+		validate       func(t *testing.T, resp map[string]any)
+	}{
+		{
+			name:           "Valid update with all fields",
+			request:        map[string]any{"content": "Updated content", "expires_in": 600, "tags": []string{"updated", "test"}},
+			expectedStatus: http.StatusOK,
+			validate: func(t *testing.T, resp map[string]any) {
+				if resp["content"].(string) != "Updated content" {
+					t.Errorf("Content not updated: %s", resp["content"])
+				}
+				if resp["tags"] != nil {
+					if !equalStringArrays(resp["tags"].([]interface{}), []string{"updated", "test"}) {
+						t.Errorf("Tags not updated: %v", resp["tags"])
+					}
+				} else {
+					t.Errorf("Expected tags in response")
+				}
+			},
+		},
+		{
+			name:           "Update with empty content", 
+			request:        map[string]any{"content": "", "expires_in": 300, "tags": []string{"empty"}},
+			expectedStatus: http.StatusBadRequest, // Empty content not allowed by validation
+			validate:       nil,
+		},
+		{
+			name:           "Update with unicode content",
+			request:        map[string]any{"content": "🚀 Hello 世界 مرحبا עולם 🌍", "expires_in": 300, "tags": []string{"unicode"}},
+			expectedStatus: http.StatusOK,
+			validate: func(t *testing.T, resp map[string]any) {
+				expected := "🚀 Hello 世界 مرحبا עולם 🌍"
+				if resp["content"].(string) != expected {
+					t.Errorf("Unicode content not preserved: got %s", resp["content"])
+				}
+			},
+		},
+		{
+			name:           "Update with max content size",
+			request:        map[string]any{"content": strings.Repeat("a", 10240), "expires_in": 300, "tags": []string{"large"}},
+			expectedStatus: http.StatusOK,
+			validate: func(t *testing.T, resp map[string]any) {
+				if len(resp["content"].(string)) != 10240 {
+					t.Errorf("Large content length not preserved: %d", len(resp["content"].(string)))
+				}
+			},
+		},
+		{
+			name:           "Update with over max content size",
+			request:        map[string]any{"content": strings.Repeat("a", 10241), "expires_in": 300, "tags": []string{"toolarge"}},
+			expectedStatus: http.StatusBadRequest,
+			validate:       nil,
+		},
+		{
+			name:           "Update with no expiration",
+			request:        map[string]any{"content": "No expiry update", "expires_in": 0, "tags": []string{"permanent"}},
+			expectedStatus: http.StatusOK,
+			validate: func(t *testing.T, resp map[string]any) {
+				if resp["expires_at"] != nil {
+					t.Errorf("Expected no expiration, got: %v", resp["expires_at"])
+				}
+			},
+		},
+		{
+			name:           "Update with maximum expiration",
+			request:        map[string]any{"content": "Max expiry update", "expires_in": 2592000, "tags": []string{"maxexp"}},
+			expectedStatus: http.StatusOK,
+			validate: func(t *testing.T, resp map[string]any) {
+				if resp["expires_at"] == nil {
+					t.Error("Expected expiration to be set for max expiry")
+				}
+			},
+		},
+		{
+			name:           "Update with over maximum expiration",
+			request:        map[string]any{"content": "Over max expiry", "expires_in": 2592001, "tags": []string{"overmax"}},
+			expectedStatus: http.StatusBadRequest,
+			validate:       nil,
+		},
+		{
+			name:           "Update with negative expiration",
+			request:        map[string]any{"content": "Negative expiry", "expires_in": -1, "tags": []string{"negative"}},
+			expectedStatus: http.StatusBadRequest,
+			validate:       nil,
+		},
+		{
+			name:           "Update with empty tags",
+			request:        map[string]any{"content": "Empty tags update", "expires_in": 300, "tags": []string{}},
+			expectedStatus: http.StatusOK,
+			validate: func(t *testing.T, resp map[string]any) {
+				if resp["tags"] != nil {
+					tags := resp["tags"].([]interface{})
+					if len(tags) != 0 {
+						t.Errorf("Expected empty tags, got: %v", tags)
+					}
+				}
+			},
+		},
+		{
+			name:           "Update with many tags",
+			request:        map[string]any{"content": "Many tags update", "expires_in": 300, "tags": generateManyTags(20)},
+			expectedStatus: http.StatusOK,
+			validate: func(t *testing.T, resp map[string]any) {
+				if resp["tags"] != nil {
+					tags := resp["tags"].([]interface{})
+					if len(tags) != 20 {
+						t.Errorf("Expected 20 tags, got: %d", len(tags))
+					}
+				} else {
+					t.Errorf("Expected tags in response")
+				}
+			},
+		},
+		{
+			name:           "Update with special character tags",
+			request:        map[string]any{"content": "Special tags", "expires_in": 300, "tags": []string{"tag-with-dash", "tag_with_underscore", "tag.with.dots", "tag@symbol", "🚀emoji"}},
+			expectedStatus: http.StatusOK,
+			validate: func(t *testing.T, resp map[string]any) {
+				if resp["tags"] != nil {
+					tags := resp["tags"].([]interface{})
+					expected := []string{"tag-with-dash", "tag_with_underscore", "tag.with.dots", "tag@symbol", "🚀emoji"}
+					if !equalStringArrays(tags, expected) {
+						t.Errorf("Special character tags not preserved: %v", tags)
+					}
+				} else {
+					t.Errorf("Expected tags in response")
+				}
+			},
+		},
+		{
+			name:           "Missing content field",
+			request:        map[string]any{"expires_in": 300, "tags": []string{"missing-content"}},
+			expectedStatus: http.StatusBadRequest,
+			validate:       nil,
+		},
+		{
+			name:           "Update with whitespace content",
+			request:        map[string]any{"content": "  \t\n\r  ", "expires_in": 300, "tags": []string{"whitespace"}},
+			expectedStatus: http.StatusOK,
+			validate: func(t *testing.T, resp map[string]any) {
+				if resp["content"].(string) != "  \t\n\r  " {
+					t.Errorf("Whitespace content not preserved: %q", resp["content"])
+				}
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var resp map[string]any
+			code, _ := doJSONRequest(t, http.MethodPut, baseURL+"/v1/snippets/"+snippetID, tc.request, &resp)
+
+			if code != tc.expectedStatus {
+				t.Errorf("Expected status %d, got %d", tc.expectedStatus, code)
+				return
+			}
+
+			if tc.expectedStatus == http.StatusOK {
+				// Verify CreatedAt is preserved for successful updates
+				if createdAtStr, ok := resp["created_at"].(string); ok {
+					respCreatedAt, err := time.Parse(time.RFC3339, createdAtStr)
+					if err != nil {
+						t.Errorf("Failed to parse created_at: %v", err)
+					} else if !respCreatedAt.Equal(originalCreatedAt) {
+						t.Errorf("CreatedAt not preserved: original=%v, response=%v", originalCreatedAt, respCreatedAt)
+					}
+				}
+
+				// Verify ID is preserved
+				if resp["id"].(string) != snippetID {
+					t.Errorf("ID changed during update: original=%s, response=%s", snippetID, resp["id"])
+				}
+
+				if tc.validate != nil {
+					tc.validate(t, resp)
+				}
+			}
+		})
+	}
+}
+
+func Test_UpdateNonExistentSnippet(t *testing.T) {
+	cleanDatabase(t)
+
+	nonExistentID := "non-existent-id-12345"
+	updateReq := map[string]any{
+		"content":    "Update non-existent",
+		"expires_in": 300,
+		"tags":       []string{"test"},
+	}
+
+	var resp map[string]any
+	code, _ := doJSONRequest(t, http.MethodPut, baseURL+"/v1/snippets/"+nonExistentID, updateReq, &resp)
+
+	if code != http.StatusNotFound {
+		t.Errorf("Expected 404 for non-existent snippet, got %d", code)
+	}
+}
+
+func Test_UpdateExpiredSnippet(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create snippet with very short expiry
+	createReq := map[string]any{
+		"content":    "About to expire",
+		"expires_in": 1, // 1 second
+		"tags":       []string{"expiring"},
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+	if code != http.StatusCreated {
+		t.Fatalf("Failed to create snippet: %d", code)
+	}
+
+	snippetID := created.ID
+
+	// Wait for expiry
+	time.Sleep(2 * time.Second)
+
+	// Try to update expired snippet
+	updateReq := map[string]any{
+		"content":    "Update expired snippet",
+		"expires_in": 300,
+		"tags":       []string{"updated"},
+	}
+
+	var resp map[string]any
+	code, _ = doJSONRequest(t, http.MethodPut, baseURL+"/v1/snippets/"+snippetID, updateReq, &resp)
+
+	if code != http.StatusGone {
+		t.Errorf("Expected 410 Gone for expired snippet, got %d", code)
+	}
+}
+
+func Test_UpdateCacheInvalidation(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create and cache a snippet
+	createReq := map[string]any{
+		"content":    "Cache test content",
+		"expires_in": 300,
+		"tags":       []string{"cache", "test"},
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+	if code != http.StatusCreated {
+		t.Fatalf("Failed to create snippet: %d", code)
+	}
+
+	snippetID := created.ID
+
+	// Read to populate cache
+	var retrieved map[string]any
+	doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets/"+snippetID, nil, &retrieved)
+
+	// Verify it's cached
+	if !verifySnippetInRedis(t, snippetID) {
+		t.Error("Expected snippet to be cached")
+	}
+
+	// Update the snippet
+	updateReq := map[string]any{
+		"content":    "Updated cache content",
+		"expires_in": 600,
+		"tags":       []string{"updated", "cache"},
+	}
+	var updated map[string]any
+	code, _ = doJSONRequest(t, http.MethodPut, baseURL+"/v1/snippets/"+snippetID, updateReq, &updated)
+	if code != http.StatusOK {
+		t.Fatalf("Update failed: %d", code)
+	}
+
+	// Cache should be invalidated after update
+	if verifySnippetInRedis(t, snippetID) {
+		t.Error("Expected cache to be invalidated after update")
+	}
+
+	// Read again to verify update and repopulate cache
+	code, _ = doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets/"+snippetID, nil, &retrieved)
+	if code != http.StatusOK {
+		t.Fatalf("Read after update failed: %d", code)
+	}
+
+	// Verify content was updated
+	if retrieved["content"].(string) != "Updated cache content" {
+		t.Errorf("Content not updated: %s", retrieved["content"])
+	}
+
+	// Verify cache is repopulated
+	if !verifySnippetInRedis(t, snippetID) {
+		t.Error("Expected snippet to be re-cached after read")
+	}
+}
+
+func Test_ConcurrentUpdates(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create a snippet
+	createReq := map[string]any{
+		"content":    "Concurrent update test",
+		"expires_in": 300,
+		"tags":       []string{"concurrent"},
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+	if code != http.StatusCreated {
+		t.Fatalf("Failed to create snippet: %d", code)
+	}
+
+	snippetID := created.ID
+
+	// Launch concurrent updates
+	const numWorkers = 10
+	var wg sync.WaitGroup
+	results := make(chan struct {
+		workerID int
+		success  bool
+		status   int
+	}, numWorkers)
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+
+			updateReq := map[string]any{
+				"content":    fmt.Sprintf("Updated by worker %d", workerID),
+				"expires_in": 300 + workerID,
+				"tags":       []string{fmt.Sprintf("worker-%d", workerID), "concurrent"},
+			}
+
+			var resp map[string]any
+			code, _ := doJSONRequest(t, http.MethodPut, baseURL+"/v1/snippets/"+snippetID, updateReq, &resp)
+
+			results <- struct {
+				workerID int
+				success  bool
+				status   int
+			}{
+				workerID: workerID,
+				success:  code == http.StatusOK,
+				status:   code,
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(results)
+
+	// Analyze results
+	var successCount, errorCount int
+	for result := range results {
+		if result.success {
+			successCount++
+		} else {
+			errorCount++
+			t.Logf("Worker %d failed with status %d", result.workerID, result.status)
+		}
+	}
+
+	if successCount == 0 {
+		t.Error("No concurrent updates succeeded")
+	}
+
+	// Verify final state is consistent
+	var final map[string]any
+	code, _ = doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets/"+snippetID, nil, &final)
+	if code != http.StatusOK {
+		t.Fatalf("Failed to read final state: %d", code)
+	}
+
+	// Final content should be from one of the workers
+	if final["content"].(string) == "Concurrent update test" {
+		t.Error("Snippet was not updated by any worker")
+	}
+
+	t.Logf("Concurrent updates: %d succeeded, %d failed", successCount, errorCount)
+}
+
+func Test_UpdateMalformedRequests(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create a snippet first
+	createReq := map[string]any{
+		"content":    "Test content for malformed updates",
+		"expires_in": 300,
+		"tags":       []string{"test"},
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+	if code != http.StatusCreated {
+		t.Fatalf("Failed to create snippet: %d", code)
+	}
+
+	snippetID := created.ID
+
+	testCases := []struct {
+		name        string
+		contentType string
+		body        string
+		expected    int
+	}{
+		{
+			name:        "Invalid JSON syntax",
+			contentType: "application/json",
+			body:        `{"content": "test", "expires_in": }`,
+			expected:    http.StatusBadRequest,
+		},
+		{
+			name:        "Wrong content type",
+			contentType: "text/plain",
+			body:        `content=test&expires_in=300`,
+			expected:    http.StatusBadRequest,
+		},
+		{
+			name:        "Empty body",
+			contentType: "application/json",
+			body:        ``,
+			expected:    http.StatusBadRequest,
+		},
+		{
+			name:        "Non-JSON body",
+			contentType: "application/json",
+			body:        `this is not json`,
+			expected:    http.StatusBadRequest,
+		},
+		{
+			name:        "Invalid field types",
+			contentType: "application/json",
+			body:        `{"content": 123, "expires_in": "not-a-number", "tags": "not-an-array"}`,
+			expected:    http.StatusBadRequest,
+		},
+		{
+			name:        "Null content",
+			contentType: "application/json",
+			body:        `{"content": null, "expires_in": 300, "tags": ["test"]}`,
+			expected:    http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Timeout: 10 * time.Second}
+
+			req, err := http.NewRequest(http.MethodPut, baseURL+"/v1/snippets/"+snippetID, strings.NewReader(tc.body))
+			if err != nil {
+				t.Fatalf("Failed to create request: %v", err)
+			}
+
+			req.Header.Set("Content-Type", tc.contentType)
+
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("Request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != tc.expected {
+				t.Errorf("Expected status %d, got %d", tc.expected, resp.StatusCode)
+			}
+		})
+	}
+}
+
+func Test_UpdateIdempotency(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create a snippet
+	createReq := map[string]any{
+		"content":    "Idempotency test",
+		"expires_in": 300,
+		"tags":       []string{"idempotent"},
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+	if code != http.StatusCreated {
+		t.Fatalf("Failed to create snippet: %d", code)
+	}
+
+	snippetID := created.ID
+	updateReq := map[string]any{
+		"content":    "Updated idempotent content",
+		"expires_in": 600,
+		"tags":       []string{"updated", "idempotent"},
+	}
+
+	// Perform the same update multiple times
+	var responses []map[string]any
+	for i := 0; i < 3; i++ {
+		var resp map[string]any
+		code, _ := doJSONRequest(t, http.MethodPut, baseURL+"/v1/snippets/"+snippetID, updateReq, &resp)
+		if code != http.StatusOK {
+			t.Fatalf("Update %d failed: %d", i+1, code)
+		}
+		responses = append(responses, resp)
+	}
+
+	// All responses should be identical (except timestamps might vary slightly)
+	for i := 1; i < len(responses); i++ {
+		if responses[i]["id"] != responses[0]["id"] {
+			t.Errorf("ID differs between updates: %s vs %s", responses[0]["id"], responses[i]["id"])
+		}
+		if responses[i]["content"] != responses[0]["content"] {
+			t.Errorf("Content differs between updates: %s vs %s", responses[0]["content"], responses[i]["content"])
+		}
+		if responses[i]["created_at"] != responses[0]["created_at"] {
+			t.Errorf("CreatedAt differs between updates: %s vs %s", responses[0]["created_at"], responses[i]["created_at"])
+		}
+		// Note: expires_at might vary slightly due to timing, so we don't check it strictly
+	}
+
+	// Verify final state in database
+	var final map[string]any
+	code, _ = doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets/"+snippetID, nil, &final)
+	if code != http.StatusOK {
+		t.Fatalf("Failed to read final state: %d", code)
+	}
+
+	if final["content"] != "Updated idempotent content" {
+		t.Errorf("Final content incorrect: %s", final["content"])
+	}
+}
+
+// Helper function to generate many tags for testing
+func generateManyTags(count int) []string {
+	var tags []string
+	for i := 0; i < count; i++ {
+		tags = append(tags, fmt.Sprintf("tag%03d", i))
+	}
+	return tags
+}
+
+// Helper function to compare string arrays from JSON responses
+func equalStringArrays(jsonArray []interface{}, expected []string) bool {
+	if len(jsonArray) != len(expected) {
+		return false
+	}
+	for i, item := range jsonArray {
+		if str, ok := item.(string); !ok || str != expected[i] {
+			return false
+		}
+	}
+	return true
 }

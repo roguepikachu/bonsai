@@ -111,6 +111,50 @@ func TestService_IntegrationPostgres(t *testing.T) {
 		}
 	})
 
+	t.Run("UpdateSnippet", func(t *testing.T) {
+		// Create a snippet first
+		snippet, err := svc.CreateSnippet(ctx, "Original content", 300, []string{"original", "update-test"})
+		if err != nil {
+			t.Fatalf("CreateSnippet failed: %v", err)
+		}
+
+		// Update the snippet
+		updatedSnippet, err := svc.UpdateSnippet(ctx, snippet.ID, "Updated content", 600, []string{"updated", "modified"})
+		if err != nil {
+			t.Fatalf("UpdateSnippet failed: %v", err)
+		}
+
+		// Verify update worked
+		if updatedSnippet.ID != snippet.ID {
+			t.Errorf("ID should be preserved: original=%s, updated=%s", snippet.ID, updatedSnippet.ID)
+		}
+		if updatedSnippet.Content != "Updated content" {
+			t.Errorf("Content not updated: got %s", updatedSnippet.Content)
+		}
+		if len(updatedSnippet.Tags) != 2 || updatedSnippet.Tags[0] != "updated" || updatedSnippet.Tags[1] != "modified" {
+			t.Errorf("Tags not updated correctly: got %v", updatedSnippet.Tags)
+		}
+		if !updatedSnippet.CreatedAt.Equal(snippet.CreatedAt) {
+			t.Error("CreatedAt should be preserved during update")
+		}
+
+		// Verify we can retrieve the updated snippet
+		retrieved, _, err := svc.GetSnippetByID(ctx, snippet.ID)
+		if err != nil {
+			t.Fatalf("GetSnippetByID after update failed: %v", err)
+		}
+		if retrieved.Content != "Updated content" {
+			t.Errorf("Retrieved content doesn't match update: got %s", retrieved.Content)
+		}
+	})
+
+	t.Run("UpdateNonExistentSnippet", func(t *testing.T) {
+		_, err := svc.UpdateSnippet(ctx, "non-existent-id", "new content", 300, []string{"test"})
+		if !errors.Is(err, ErrSnippetNotFound) {
+			t.Errorf("Expected ErrSnippetNotFound, got: %v", err)
+		}
+	})
+
 	t.Run("ListSnippetsWithPagination", func(t *testing.T) {
 		// Create multiple snippets
 		for i := 0; i < 15; i++ {
@@ -243,7 +287,7 @@ func TestService_IntegrationRedisCache(t *testing.T) {
 			t.Fatalf("Failed to start miniredis: %v", err)
 		}
 		defer miniRedis.Close()
-		
+
 		rdb = redis.NewClient(&redis.Options{
 			Addr: miniRedis.Addr(),
 		})
@@ -325,6 +369,59 @@ func TestService_IntegrationRedisCache(t *testing.T) {
 		// We expect fewer list keys (invalidated) but snippet keys should still exist
 		if len(snippetKeys) == 0 {
 			t.Error("Expected individual snippet cache keys to remain after list invalidation")
+		}
+	})
+
+	t.Run("UpdateWithCache", func(t *testing.T) {
+		// Create a snippet first
+		snippet, err := svc.CreateSnippet(ctx, "Cached original content", 300, []string{"cached", "update"})
+		if err != nil {
+			t.Fatalf("CreateSnippet failed: %v", err)
+		}
+
+		// Read to populate cache
+		_, _, err = svc.GetSnippetByID(ctx, snippet.ID)
+		if err != nil {
+			t.Fatalf("GetSnippetByID failed: %v", err)
+		}
+
+		// Verify cache has the snippet key
+		cacheKey := fmt.Sprintf("snippet:%s", snippet.ID)
+		cached := rdb.Get(ctx, cacheKey).Val()
+		if cached == "" {
+			t.Error("Expected snippet to be cached after read")
+		}
+
+		// Update the snippet (should invalidate cache)
+		updatedSnippet, err := svc.UpdateSnippet(ctx, snippet.ID, "Cached updated content", 600, []string{"cached", "updated"})
+		if err != nil {
+			t.Fatalf("UpdateSnippet failed: %v", err)
+		}
+
+		// Verify update worked
+		if updatedSnippet.Content != "Cached updated content" {
+			t.Errorf("Content not updated: got %s", updatedSnippet.Content)
+		}
+
+		// Cache should be invalidated after update
+		cachedAfterUpdate := rdb.Get(ctx, cacheKey).Val()
+		if cachedAfterUpdate != "" {
+			t.Error("Expected cache to be invalidated after update")
+		}
+
+		// Read again should populate cache with updated content
+		retrieved, _, err := svc.GetSnippetByID(ctx, snippet.ID)
+		if err != nil {
+			t.Fatalf("GetSnippetByID after update failed: %v", err)
+		}
+		if retrieved.Content != "Cached updated content" {
+			t.Errorf("Retrieved content doesn't match update: got %s", retrieved.Content)
+		}
+
+		// Cache should be populated again
+		cachedAgain := rdb.Get(ctx, cacheKey).Val()
+		if cachedAgain == "" {
+			t.Error("Expected cache to be repopulated after read")
 		}
 	})
 }
@@ -828,7 +925,7 @@ func TestService_CachePerformance(t *testing.T) {
 			t.Fatalf("Failed to start miniredis: %v", err)
 		}
 		defer miniRedis.Close()
-		
+
 		rdb = redis.NewClient(&redis.Options{
 			Addr: miniRedis.Addr(),
 		})
@@ -971,7 +1068,7 @@ func TestService_DataConsistency(t *testing.T) {
 			t.Fatalf("Failed to start miniredis: %v", err)
 		}
 		defer miniRedis.Close()
-		
+
 		rdb = redis.NewClient(&redis.Options{
 			Addr: miniRedis.Addr(),
 		})
@@ -1053,6 +1150,400 @@ func TestService_DataConsistency(t *testing.T) {
 			if !cachedIDs[s.ID] {
 				t.Errorf("Snippet %s present in direct list but not cached list", s.ID)
 			}
+		}
+	})
+
+	t.Run("UpdateConsistency", func(t *testing.T) {
+		// Create snippet through cached service
+		snippet, err := svcCached.CreateSnippet(ctx, "Original update content", 300, []string{"updatetest"})
+		if err != nil {
+			t.Fatalf("Create through cached service failed: %v", err)
+		}
+
+		// Update through cached service
+		updatedSnippet, err := svcCached.UpdateSnippet(ctx, snippet.ID, "Updated content", 600, []string{"updated", "test"})
+		if err != nil {
+			t.Fatalf("Update through cached service failed: %v", err)
+		}
+
+		// Read from cached service
+		cachedResult, _, err := svcCached.GetSnippetByID(ctx, snippet.ID)
+		if err != nil {
+			t.Fatalf("Read from cached service after update failed: %v", err)
+		}
+
+		// Read directly from database
+		directResult, _, err := svcDirect.GetSnippetByID(ctx, snippet.ID)
+		if err != nil {
+			t.Fatalf("Read from direct service after update failed: %v", err)
+		}
+
+		// Results should be identical and match update
+		if cachedResult.Content != "Updated content" {
+			t.Errorf("Cached content not updated: got '%s'", cachedResult.Content)
+		}
+		if directResult.Content != "Updated content" {
+			t.Errorf("Direct content not updated: got '%s'", directResult.Content)
+		}
+		if cachedResult.Content != directResult.Content {
+			t.Errorf("Content mismatch after update: cached='%s', direct='%s'", cachedResult.Content, directResult.Content)
+		}
+		if len(cachedResult.Tags) != 2 || cachedResult.Tags[0] != "updated" || cachedResult.Tags[1] != "test" {
+			t.Errorf("Cached tags not updated: got %v", cachedResult.Tags)
+		}
+		if len(directResult.Tags) != 2 || directResult.Tags[0] != "updated" || directResult.Tags[1] != "test" {
+			t.Errorf("Direct tags not updated: got %v", directResult.Tags)
+		}
+
+		// Verify the updated snippet returned by UpdateSnippet is correct
+		if updatedSnippet.Content != "Updated content" {
+			t.Errorf("UpdateSnippet return value incorrect: got '%s'", updatedSnippet.Content)
+		}
+	})
+}
+
+// TestService_UpdateEdgeCases tests update functionality edge cases with integration
+func TestService_UpdateEdgeCases(t *testing.T) {
+	// Don't run in parallel when using shared database in CI
+	if os.Getenv("CI") != "true" {
+		t.Parallel()
+	}
+	ctx := context.Background()
+
+	var dsn string
+	var pool *pgxpool.Pool
+	var err error
+
+	// Check if running in CI environment
+	if os.Getenv("CI") == "true" {
+		// Use the existing database service in CI
+		dsn = os.Getenv("DATABASE_URL")
+		if dsn == "" {
+			t.Skip("DATABASE_URL not set in CI environment")
+			return
+		}
+		pool, err = pgxpool.New(ctx, dsn)
+	} else {
+		// Start PostgreSQL container for local testing
+		pg, err := tcpostgres.RunContainer(ctx,
+			tcpostgres.WithUsername("bonsai"),
+			tcpostgres.WithPassword("secret"),
+			tcpostgres.WithDatabase("bonsai"),
+		)
+		if err != nil {
+			t.Skipf("skipping: cannot start postgres container: %v", err)
+			return
+		}
+		defer pg.Terminate(ctx)
+
+		// Connect to PostgreSQL
+		host, _ := pg.Host(ctx)
+		port, _ := pg.MappedPort(ctx, "5432")
+		dsn = fmt.Sprintf("postgres://bonsai:secret@%s:%s/bonsai?sslmode=disable", host, port.Port())
+		pool, err = pgxpool.New(ctx, dsn)
+	}
+	if err != nil {
+		t.Fatalf("Failed to connect to postgres: %v", err)
+	}
+	defer pool.Close()
+
+	// Wait for database to be ready
+	for i := 0; i < 30; i++ {
+		if err := pool.Ping(ctx); err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+		if i == 29 {
+			t.Fatalf("Database not ready after 3 seconds")
+		}
+	}
+
+	// Setup repository and service
+	repo := postgresRepo.NewSnippetRepository(pool)
+	if err := repo.EnsureSchema(ctx); err != nil {
+		t.Fatalf("Failed to ensure schema: %v", err)
+	}
+
+	clock := RealClock{}
+	svc := NewService(repo, clock)
+
+	t.Run("UpdateExpiredSnippet", func(t *testing.T) {
+		// Create snippet with 1 second expiry
+		snippet, err := svc.CreateSnippet(ctx, "About to expire", 1, []string{"expiry-test"})
+		if err != nil {
+			t.Fatalf("CreateSnippet failed: %v", err)
+		}
+
+		// Wait for expiry
+		time.Sleep(2 * time.Second)
+
+		// Try to update expired snippet
+		_, err = svc.UpdateSnippet(ctx, snippet.ID, "Updated expired", 300, []string{"updated"})
+		if !errors.Is(err, ErrSnippetExpired) {
+			t.Errorf("Expected ErrSnippetExpired when updating expired snippet, got: %v", err)
+		}
+	})
+
+	t.Run("UpdateWithUnicodeContent", func(t *testing.T) {
+		// Create snippet
+		snippet, err := svc.CreateSnippet(ctx, "Simple content", 300, []string{"unicode-test"})
+		if err != nil {
+			t.Fatalf("CreateSnippet failed: %v", err)
+		}
+
+		// Update with complex unicode content
+		unicodeContent := "🚀 Hello 世界 مرحبا עולם Γειά σου κόσμε नमस्ते 🌍"
+		updatedSnippet, err := svc.UpdateSnippet(ctx, snippet.ID, unicodeContent, 300, []string{"unicode", "updated"})
+		if err != nil {
+			t.Fatalf("UpdateSnippet with unicode failed: %v", err)
+		}
+
+		// Verify unicode content is preserved
+		if updatedSnippet.Content != unicodeContent {
+			t.Errorf("Unicode content not preserved: expected '%s', got '%s'", unicodeContent, updatedSnippet.Content)
+		}
+
+		// Verify by reading back
+		retrieved, _, err := svc.GetSnippetByID(ctx, snippet.ID)
+		if err != nil {
+			t.Fatalf("GetSnippetByID after unicode update failed: %v", err)
+		}
+		if retrieved.Content != unicodeContent {
+			t.Errorf("Unicode content not persisted: expected '%s', got '%s'", unicodeContent, retrieved.Content)
+		}
+	})
+
+	t.Run("UpdateWithMaxContent", func(t *testing.T) {
+		// Create snippet
+		snippet, err := svc.CreateSnippet(ctx, "Small content", 300, []string{"large-test"})
+		if err != nil {
+			t.Fatalf("CreateSnippet failed: %v", err)
+		}
+
+		// Create maximum size content (10240 bytes)
+		largeContent := make([]byte, 10240)
+		for i := range largeContent {
+			largeContent[i] = byte('A' + (i % 26))
+		}
+
+		// Update with large content
+		updatedSnippet, err := svc.UpdateSnippet(ctx, snippet.ID, string(largeContent), 300, []string{"large", "content"})
+		if err != nil {
+			t.Fatalf("UpdateSnippet with large content failed: %v", err)
+		}
+
+		// Verify large content is preserved
+		if len(updatedSnippet.Content) != 10240 {
+			t.Errorf("Large content length not preserved: expected 10240, got %d", len(updatedSnippet.Content))
+		}
+		if updatedSnippet.Content[:5] != "ABCDE" {
+			t.Errorf("Large content pattern incorrect: expected 'ABCDE', got '%s'", updatedSnippet.Content[:5])
+		}
+	})
+
+	t.Run("UpdateWithEmptyContent", func(t *testing.T) {
+		// Create snippet with content
+		snippet, err := svc.CreateSnippet(ctx, "Some content", 300, []string{"empty-test"})
+		if err != nil {
+			t.Fatalf("CreateSnippet failed: %v", err)
+		}
+
+		// Update with empty content
+		updatedSnippet, err := svc.UpdateSnippet(ctx, snippet.ID, "", 300, []string{"empty"})
+		if err != nil {
+			t.Fatalf("UpdateSnippet with empty content failed: %v", err)
+		}
+
+		// Verify empty content is accepted
+		if updatedSnippet.Content != "" {
+			t.Errorf("Empty content not preserved: got '%s'", updatedSnippet.Content)
+		}
+	})
+
+	t.Run("UpdateWithManyTags", func(t *testing.T) {
+		// Create snippet
+		snippet, err := svc.CreateSnippet(ctx, "Tag test content", 300, []string{"original"})
+		if err != nil {
+			t.Fatalf("CreateSnippet failed: %v", err)
+		}
+
+		// Create many tags
+		var manyTags []string
+		for i := 0; i < 20; i++ {
+			manyTags = append(manyTags, fmt.Sprintf("tag%d", i))
+		}
+
+		// Update with many tags
+		updatedSnippet, err := svc.UpdateSnippet(ctx, snippet.ID, "Updated with many tags", 300, manyTags)
+		if err != nil {
+			t.Fatalf("UpdateSnippet with many tags failed: %v", err)
+		}
+
+		// Verify all tags are preserved
+		if len(updatedSnippet.Tags) != 20 {
+			t.Errorf("Tag count not preserved: expected 20, got %d", len(updatedSnippet.Tags))
+		}
+		if updatedSnippet.Tags[0] != "tag0" || updatedSnippet.Tags[19] != "tag19" {
+			t.Errorf("Tag ordering incorrect: first='%s', last='%s'", updatedSnippet.Tags[0], updatedSnippet.Tags[len(updatedSnippet.Tags)-1])
+		}
+	})
+
+	t.Run("UpdateWithSpecialCharacterTags", func(t *testing.T) {
+		// Create snippet
+		snippet, err := svc.CreateSnippet(ctx, "Special tag test", 300, []string{"normal"})
+		if err != nil {
+			t.Fatalf("CreateSnippet failed: %v", err)
+		}
+
+		// Update with special character tags
+		specialTags := []string{"tag-with-dash", "tag_with_underscore", "tag.with.dots", "tag@symbol", "🚀emoji-tag"}
+		updatedSnippet, err := svc.UpdateSnippet(ctx, snippet.ID, "Updated special tags", 300, specialTags)
+		if err != nil {
+			t.Fatalf("UpdateSnippet with special character tags failed: %v", err)
+		}
+
+		// Verify special character tags are preserved
+		if len(updatedSnippet.Tags) != len(specialTags) {
+			t.Errorf("Special tag count incorrect: expected %d, got %d", len(specialTags), len(updatedSnippet.Tags))
+		}
+		for i, expected := range specialTags {
+			if updatedSnippet.Tags[i] != expected {
+				t.Errorf("Special tag %d incorrect: expected '%s', got '%s'", i, expected, updatedSnippet.Tags[i])
+			}
+		}
+	})
+
+	t.Run("UpdateExpirationTimes", func(t *testing.T) {
+		// Create snippet with expiration
+		snippet, err := svc.CreateSnippet(ctx, "Expiration test", 300, []string{"expiry"})
+		if err != nil {
+			t.Fatalf("CreateSnippet failed: %v", err)
+		}
+
+		// Update with no expiration (0 seconds)
+		updatedSnippet, err := svc.UpdateSnippet(ctx, snippet.ID, "No expiration", 0, []string{"no-expiry"})
+		if err != nil {
+			t.Fatalf("UpdateSnippet with 0 expiry failed: %v", err)
+		}
+
+		// Verify no expiration is set
+		if !updatedSnippet.ExpiresAt.IsZero() {
+			t.Errorf("Expected no expiration, got %v", updatedSnippet.ExpiresAt)
+		}
+
+		// Update with maximum expiration (30 days)
+		maxExpiry := 30 * 24 * 60 * 60 // 30 days in seconds
+		updatedSnippet2, err := svc.UpdateSnippet(ctx, snippet.ID, "Max expiration", maxExpiry, []string{"max-expiry"})
+		if err != nil {
+			t.Fatalf("UpdateSnippet with max expiry failed: %v", err)
+		}
+
+		// Verify max expiration is set correctly
+		if updatedSnippet2.ExpiresAt.IsZero() {
+			t.Error("Expected max expiration to be set")
+		}
+
+		// Should expire approximately 30 days from now
+		expectedExpiry := time.Now().Add(time.Duration(maxExpiry) * time.Second)
+		timeDiff := updatedSnippet2.ExpiresAt.Sub(expectedExpiry).Abs()
+		if timeDiff > 5*time.Second {
+			t.Errorf("Max expiration time incorrect: expected around %v, got %v (diff: %v)",
+				expectedExpiry, updatedSnippet2.ExpiresAt, timeDiff)
+		}
+	})
+
+	t.Run("UpdatePreservesCreatedAt", func(t *testing.T) {
+		// Create snippet
+		snippet, err := svc.CreateSnippet(ctx, "CreatedAt test", 300, []string{"createdat"})
+		if err != nil {
+			t.Fatalf("CreateSnippet failed: %v", err)
+		}
+
+		originalCreatedAt := snippet.CreatedAt
+
+		// Wait a bit to ensure timestamps would be different
+		time.Sleep(100 * time.Millisecond)
+
+		// Update snippet
+		updatedSnippet, err := svc.UpdateSnippet(ctx, snippet.ID, "Updated content", 300, []string{"updated"})
+		if err != nil {
+			t.Fatalf("UpdateSnippet failed: %v", err)
+		}
+
+		// Verify CreatedAt is preserved
+		if !updatedSnippet.CreatedAt.Equal(originalCreatedAt) {
+			t.Errorf("CreatedAt not preserved: original=%v, updated=%v",
+				originalCreatedAt, updatedSnippet.CreatedAt)
+		}
+
+		// Also verify by reading back
+		retrieved, _, err := svc.GetSnippetByID(ctx, snippet.ID)
+		if err != nil {
+			t.Fatalf("GetSnippetByID failed: %v", err)
+		}
+		if !retrieved.CreatedAt.Equal(originalCreatedAt) {
+			t.Errorf("CreatedAt not preserved in database: original=%v, retrieved=%v",
+				originalCreatedAt, retrieved.CreatedAt)
+		}
+	})
+
+	t.Run("ConcurrentUpdates", func(t *testing.T) {
+		// Create snippet
+		snippet, err := svc.CreateSnippet(ctx, "Concurrent test", 300, []string{"concurrent"})
+		if err != nil {
+			t.Fatalf("CreateSnippet failed: %v", err)
+		}
+
+		const numWorkers = 10
+		var wg sync.WaitGroup
+		errors := make(chan error, numWorkers)
+		successes := make(chan bool, numWorkers)
+
+		// Launch concurrent updates
+		for i := 0; i < numWorkers; i++ {
+			wg.Add(1)
+			go func(workerID int) {
+				defer wg.Done()
+				content := fmt.Sprintf("Updated by worker %d", workerID)
+				_, err := svc.UpdateSnippet(ctx, snippet.ID, content, 300, []string{fmt.Sprintf("worker-%d", workerID)})
+				if err != nil {
+					errors <- fmt.Errorf("worker %d: %v", workerID, err)
+				} else {
+					successes <- true
+				}
+			}(i)
+		}
+
+		wg.Wait()
+		close(errors)
+		close(successes)
+
+		// Check results - at least one should succeed
+		var successCount int
+		for range successes {
+			successCount++
+		}
+
+		// Count errors
+		var errorCount int
+		for err := range errors {
+			t.Logf("Concurrent update error: %v", err)
+			errorCount++
+		}
+
+		if successCount == 0 {
+			t.Error("No concurrent updates succeeded")
+		}
+
+		// Verify final state is consistent
+		finalSnippet, _, err := svc.GetSnippetByID(ctx, snippet.ID)
+		if err != nil {
+			t.Fatalf("GetSnippetByID after concurrent updates failed: %v", err)
+		}
+
+		// Content should be from one of the workers
+		if finalSnippet.Content == "Concurrent test" {
+			t.Error("Snippet content was not updated by any worker")
 		}
 	})
 }

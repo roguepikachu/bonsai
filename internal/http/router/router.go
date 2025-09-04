@@ -38,6 +38,7 @@ func NewRouter(snippetHandler *handler.Handler, healthHandler *handler.HealthHan
 	router.POST(BasePath+"/snippets", snippetHandler.Create)
 	router.GET(BasePath+"/snippets", snippetHandler.List)
 	router.GET(BasePath+"/snippets/:id", snippetHandler.Get)
+	router.PUT(BasePath+"/snippets/:id", snippetHandler.Update)
 
 	return router
 }

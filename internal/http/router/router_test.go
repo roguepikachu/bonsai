@@ -72,6 +72,29 @@ func (t *testSvc) GetSnippetByID(_ context.Context, id string) (domain.Snippet, 
 	return domain.Snippet{}, service.SnippetMeta{CacheStatus: service.CacheMiss}, service.ErrSnippetNotFound
 }
 
+func (t *testSvc) UpdateSnippet(_ context.Context, id string, content string, expiresIn int, tags []string) (domain.Snippet, error) {
+	if t.snippets == nil {
+		return domain.Snippet{}, service.ErrSnippetNotFound
+	}
+
+	existing, ok := t.snippets[id]
+	if !ok {
+		return domain.Snippet{}, service.ErrSnippetNotFound
+	}
+
+	// Update the snippet
+	existing.Content = content
+	existing.Tags = tags
+	if expiresIn > 0 {
+		existing.ExpiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second)
+	} else {
+		existing.ExpiresAt = time.Time{}
+	}
+
+	t.snippets[id] = existing
+	return existing, nil
+}
+
 func TestNewRouter_RoutesBasic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := NewRouter(h.NewHandler(&testSvc{}), h.NewHealthHandler(nil, nil))
@@ -368,7 +391,7 @@ func TestRouter_HTTPMethods(t *testing.T) {
 		{"PATCH not allowed", http.MethodPatch, "/v1/snippets", http.StatusNotFound},
 		{"GET snippet by ID", http.MethodGet, "/v1/snippets/test", http.StatusNotFound},
 		{"POST on ID not allowed", http.MethodPost, "/v1/snippets/test", http.StatusNotFound},
-		{"PUT on ID not allowed", http.MethodPut, "/v1/snippets/test", http.StatusNotFound},
+		{"PUT on ID allowed", http.MethodPut, "/v1/snippets/test", http.StatusBadRequest}, // Will return 400 because of missing body
 		{"DELETE on ID not allowed", http.MethodDelete, "/v1/snippets/test", http.StatusNotFound},
 	}
 

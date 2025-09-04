@@ -153,4 +153,22 @@ func (r *SnippetRepository) invalidateListKeys(ctx context.Context) error {
 	return nil
 }
 
+// Update writes through to primary and invalidates cache.
+func (r *SnippetRepository) Update(ctx context.Context, s domain.Snippet) error {
+	if err := r.primary.Update(ctx, s); err != nil {
+		return err
+	}
+	// invalidate the cached snippet
+	if err := r.redis.Del(ctx, keySnippet(s.ID)).Err(); err != nil {
+		logger.With(ctx, map[string]any{"id": s.ID}).Warn("failed to delete snippet from cache")
+	} else {
+		logger.With(ctx, map[string]any{"id": s.ID}).Debug("invalidated cached snippet after update")
+	}
+	// bust list caches best-effort
+	if err := r.invalidateListKeys(ctx); err != nil {
+		logger.With(ctx, map[string]any{"error": err.Error()}).Warn("failed to invalidate list cache keys")
+	}
+	return nil
+}
+
 var _ repository.SnippetRepository = (*SnippetRepository)(nil)
