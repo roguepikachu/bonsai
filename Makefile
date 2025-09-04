@@ -56,12 +56,29 @@ clean: ## Clean up built artifacts, test resources, and stop services
 ##@ Services
 .PHONY: services services-stop services-restart logs
 services: ## Start database services (PostgreSQL + Redis)
+ifdef CI
+	@echo "$(COLOR_YELLOW)Running in CI environment - skipping local service startup$(COLOR_RESET)"
+	@echo "$(COLOR_BLUE)GitHub Actions provides services on dynamic ports$(COLOR_RESET)"
+	@# In CI, services are already provided by GitHub Actions
+	@# Just verify they're available
+	@if [ -n "$(DATABASE_URL)" ]; then \
+		echo "$(COLOR_GREEN)Database URL: $(DATABASE_URL)$(COLOR_RESET)"; \
+	fi
+	@if [ -n "$(REDIS_URL)" ]; then \
+		echo "$(COLOR_GREEN)Redis URL: $(REDIS_URL)$(COLOR_RESET)"; \
+	fi
+else
 	@echo "$(COLOR_BLUE)Starting database services...$(COLOR_RESET)"
 	$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) up -d
+endif
 
 services-stop: ## Stop all services
+ifdef CI
+	@echo "$(COLOR_YELLOW)CI environment - services managed by GitHub Actions$(COLOR_RESET)"
+else
 	@echo "$(COLOR_YELLOW)Stopping services...$(COLOR_RESET)"
 	$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) down
+endif
 
 services-restart: services-stop services ## Restart all services
 
@@ -85,22 +102,32 @@ test-unit: ## Run unit tests (fast, no external services)
 
 test-integration: ## Run integration tests (requires services)
 	@echo "$(COLOR_BLUE)Running integration tests...$(COLOR_RESET)"
+ifndef CI
+	@# Local environment - start services
 	@$(MAKE) services
+endif
 	@trap '$(MAKE) test-cleanup' EXIT; \
 		$(GO) test -tags=integration -race $(PKG) && \
 		echo "$(COLOR_GREEN)Integration tests completed!$(COLOR_RESET)"
 
 test-acceptance: ## Run full acceptance tests (auto-manages services)
 	@echo "$(COLOR_BLUE)Running acceptance tests...$(COLOR_RESET)"
+ifndef CI
+	@# Local environment - start services
 	@$(MAKE) services
+endif
 	@trap '$(MAKE) test-cleanup' EXIT; \
 		$(GO) test -tags=acceptance -race -v ./internal/http/acceptance && \
 		echo "$(COLOR_GREEN)Acceptance tests completed!$(COLOR_RESET)"
 
 test-cleanup: ## Clean up test resources (test data and artifacts only)
 	@echo "$(COLOR_YELLOW)Cleaning up test resources...$(COLOR_RESET)"
+ifndef CI
+	@# Local environment - clean up using docker
 	@docker exec postgres psql -U postgres -d bonsai_test -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
 	@docker exec redis redis-cli FLUSHALL 2>/dev/null || true
+endif
+	@# Always clean up test artifacts
 	@rm -f coverage*.out coverage*.html 2>/dev/null || true
 	@echo "$(COLOR_GREEN)Test cleanup completed!$(COLOR_RESET)"
 
