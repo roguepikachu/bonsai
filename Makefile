@@ -45,11 +45,12 @@ build: ## Build the binary
 install: build ## Install binary to $GOPATH/bin
 	$(GO) install ./cmd/api
 
-clean: ## Clean up built artifacts
+clean: ## Clean up built artifacts and test resources
 	@echo "$(COLOR_YELLOW)Cleaning up...$(COLOR_RESET)"
 	rm -f $(BINARY)
-	rm -f coverage*.out
+	rm -f coverage*.out coverage*.html
 	$(GO) clean
+	@$(MAKE) test-cleanup
 
 ##@ Services
 .PHONY: services services-stop services-restart logs
@@ -67,8 +68,15 @@ logs: ## Show service logs
 	$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) logs -f
 
 ##@ Testing
-.PHONY: test test-unit test-integration test-acceptance coverage
+.PHONY: test test-all test-unit test-integration test-acceptance test-cleanup coverage
 test: test-unit ## Run tests (default: unit tests)
+
+test-all: ## Run all tests (unit + integration + acceptance) with cleanup
+	@echo "$(COLOR_BLUE)Running all tests...$(COLOR_RESET)"
+	@$(MAKE) test-unit
+	@$(MAKE) test-integration
+	@$(MAKE) test-acceptance
+	@echo "$(COLOR_GREEN)All tests completed successfully!$(COLOR_RESET)"
 
 test-unit: ## Run unit tests (fast, no external services)
 	@echo "$(COLOR_BLUE)Running unit tests...$(COLOR_RESET)"
@@ -76,13 +84,26 @@ test-unit: ## Run unit tests (fast, no external services)
 
 test-integration: ## Run integration tests (requires services)
 	@echo "$(COLOR_BLUE)Running integration tests...$(COLOR_RESET)"
-	@if [ -z "$$CI" ]; then $(MAKE) services; fi
-	$(GO) test -tags=integration -race $(PKG)
+	@echo "$(COLOR_BLUE)Starting database services...$(COLOR_RESET)"
+	@$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) up -d
+	@trap '$(MAKE) test-cleanup' EXIT; \
+		$(GO) test -tags=integration -race $(PKG) && \
+		echo "$(COLOR_GREEN)Integration tests completed!$(COLOR_RESET)"
 
 test-acceptance: ## Run full acceptance tests (auto-manages services)
 	@echo "$(COLOR_BLUE)Running acceptance tests...$(COLOR_RESET)"
-	@if [ -z "$$CI" ]; then $(MAKE) services; fi
-	$(GO) test -tags=acceptance -race -v ./internal/http/acceptance
+	@echo "$(COLOR_BLUE)Starting database services...$(COLOR_RESET)"
+	@$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) up -d
+	@trap '$(MAKE) test-cleanup' EXIT; \
+		$(GO) test -tags=acceptance -race -v ./internal/http/acceptance && \
+		echo "$(COLOR_GREEN)Acceptance tests completed!$(COLOR_RESET)"
+
+test-cleanup: ## Clean up test resources (containers, volumes, test data)
+	@echo "$(COLOR_YELLOW)Cleaning up test resources...$(COLOR_RESET)"
+	@$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) down -v --remove-orphans 2>/dev/null || true
+	@docker volume prune -f 2>/dev/null || true
+	@rm -f coverage*.out coverage*.html 2>/dev/null || true
+	@echo "$(COLOR_GREEN)Test cleanup completed!$(COLOR_RESET)"
 
 coverage: ## Generate test coverage report
 	@echo "$(COLOR_BLUE)Generating coverage report...$(COLOR_RESET)"

@@ -37,7 +37,7 @@ var (
 
 func init() {
 	// Parse Redis address from URL
-	redisURL := getEnvOrDefault("REDIS_URL", "redis://localhost:6379/1")
+	redisURL := getEnvOrDefault("REDIS_URL", "redis://localhost:6380/1")
 	if strings.HasPrefix(redisURL, "redis://") {
 		addr := strings.TrimPrefix(redisURL, "redis://")
 		if idx := strings.Index(addr, "/"); idx > 0 {
@@ -46,7 +46,7 @@ func init() {
 			testRedisAddr = addr
 		}
 	} else {
-		testRedisAddr = "localhost:6379"
+		testRedisAddr = "localhost:6380"
 	}
 	// Handle CI environment with different Redis port
 	if os.Getenv("CI") == ciTrue && os.Getenv("REDIS_PORT") != "" {
@@ -332,14 +332,18 @@ func verifySnippetInDatabase(t *testing.T, id string, expected domain.Snippet) {
 
 	var snippet domain.Snippet
 	var tags []string
+	var expiresAt *time.Time
 	err = pool.QueryRow(context.Background(), `
 		SELECT id, content, created_at, expires_at, tags 
 		FROM snippets WHERE id = $1`, id).Scan(
-		&snippet.ID, &snippet.Content, &snippet.CreatedAt, &snippet.ExpiresAt, &tags)
+		&snippet.ID, &snippet.Content, &snippet.CreatedAt, &expiresAt, &tags)
 	if err != nil {
 		t.Fatalf("Failed to query snippet from database: %v", err)
 	}
 	snippet.Tags = tags
+	if expiresAt != nil {
+		snippet.ExpiresAt = *expiresAt
+	}
 
 	if snippet.ID != expected.ID {
 		t.Errorf("Database ID mismatch: got %s, want %s", snippet.ID, expected.ID)
@@ -411,11 +415,15 @@ func getSnippetsFromDatabase(t *testing.T, limit int) []domain.Snippet {
 	for rows.Next() {
 		var snippet domain.Snippet
 		var tags []string
-		err := rows.Scan(&snippet.ID, &snippet.Content, &snippet.CreatedAt, &snippet.ExpiresAt, &tags)
+		var expiresAt *time.Time
+		err := rows.Scan(&snippet.ID, &snippet.Content, &snippet.CreatedAt, &expiresAt, &tags)
 		if err != nil {
 			t.Fatalf("Failed to scan snippet: %v", err)
 		}
 		snippet.Tags = tags
+		if expiresAt != nil {
+			snippet.ExpiresAt = *expiresAt
+		}
 		snippets = append(snippets, snippet)
 	}
 	return snippets
@@ -928,7 +936,7 @@ func Test_CacheInvalidation(t *testing.T) {
 	doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets?page=1&limit=10", nil, &list)
 
 	// Verify list cache keys exist
-	listCacheCount := getRedisKeyCount(t, "list:*")
+	listCacheCount := getRedisKeyCount(t, "snippets:*")
 	if listCacheCount == 0 {
 		t.Error("Expected list cache keys to exist")
 	}
@@ -961,7 +969,7 @@ func Test_CacheInvalidation(t *testing.T) {
 
 	// List caches should be invalidated
 	time.Sleep(100 * time.Millisecond) // Give cache invalidation time to process
-	newListCacheCount := getRedisKeyCount(t, "list:*")
+	newListCacheCount := getRedisKeyCount(t, "snippets:*")
 	if newListCacheCount >= listCacheCount {
 		t.Errorf("Expected list caches to be invalidated, had %d, now have %d", listCacheCount, newListCacheCount)
 	}

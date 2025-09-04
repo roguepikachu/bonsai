@@ -65,6 +65,12 @@ jobs:
     - name: Run unit tests with coverage
       run: make test-unit
 
+    - name: Cleanup test artifacts
+      if: always()
+      run: |
+        rm -f coverage*.out coverage*.html
+        go clean -testcache
+
     - name: Upload unit test coverage
       uses: actions/upload-artifact@v4
       with:
@@ -126,6 +132,17 @@ jobs:
         CI: true
         DATABASE_URL: postgres://bonsai:bonsai@localhost:5432/bonsai_test?sslmode=disable
         REDIS_URL: redis://localhost:6379
+
+    - name: Cleanup test resources
+      if: always()
+      run: |
+        # Clean up test data from PostgreSQL
+        PGPASSWORD=bonsai psql -h localhost -U bonsai -d bonsai_test -c "TRUNCATE TABLE IF EXISTS snippets CASCADE;" || true
+        # Clean up Redis cache
+        redis-cli -h localhost FLUSHALL || true
+        # Clean up test artifacts
+        rm -f coverage*.out coverage*.html
+        go clean -testcache
 
     - name: Upload integration test coverage
       uses: actions/upload-artifact@v4
@@ -191,6 +208,20 @@ jobs:
         REDIS_PORT: 6380
         BONSAI_PORT: 8080
 
+    - name: Cleanup test resources
+      if: always()
+      run: |
+        # Clean up test databases
+        PGPASSWORD=postgres psql -h localhost -U postgres -c "DROP DATABASE IF EXISTS bonsai_test;" || true
+        PGPASSWORD=postgres psql -h localhost -U postgres -d bonsai -c "TRUNCATE TABLE IF EXISTS snippets CASCADE;" || true
+        # Clean up Redis cache  
+        redis-cli -h localhost -p 6380 FLUSHALL || true
+        # Clean up test artifacts
+        rm -f coverage*.out coverage*.html
+        go clean -testcache
+        # Kill any orphaned test server processes
+        pkill -f "go test" || true
+
   coverage-report:
     runs-on: ubuntu-latest
     needs: [lint, unit-tests, integration-tests]
@@ -235,3 +266,23 @@ jobs:
       with:
         name: coverage-report
         path: coverage.html
+
+    - name: Final cleanup
+      if: always()
+      run: |
+        rm -f coverage*.out coverage*.html
+        go clean -testcache -modcache
+
+  cleanup:
+    runs-on: ubuntu-latest
+    needs: [lint, unit-tests, integration-tests, acceptance-tests, coverage-report]
+    if: always()
+    
+    steps:
+    - name: Clean up artifacts
+      run: |
+        echo "Cleaning up workflow artifacts..."
+        
+    - name: Clean up caches
+      run: |
+        echo "Cache cleanup handled by GitHub automatically after 7 days of inactivity"
