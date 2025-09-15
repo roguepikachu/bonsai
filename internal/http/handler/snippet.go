@@ -22,6 +22,7 @@ type SnippetService interface {
 	ListSnippets(ctx context.Context, page, limit int, tag string) ([]domain.Snippet, error)
 	GetSnippetByID(ctx context.Context, id string) (domain.Snippet, service.SnippetMeta, error)
 	UpdateSnippet(ctx context.Context, id string, content string, expiresIn int, tags []string) (domain.Snippet, error)
+	DeleteSnippet(ctx context.Context, id string) error
 }
 
 // Handler handles HTTP requests for snippets.
@@ -205,4 +206,27 @@ func (h *Handler) Update(c *gin.Context) {
 		Tags:      snippet.Tags,
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// Delete handles deleting a snippet by ID.
+func (h *Handler) Delete(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "bad_request", "message": "id is required"}})
+		return
+	}
+
+	err := h.svc.DeleteSnippet(ctx, id)
+	if err != nil {
+		if errors.Is(err, service.ErrSnippetNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"code": "not_found", "message": "not found"}})
+			return
+		}
+		logger.Error(ctx, "failed to delete snippet: %s", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"code": "internal_error", "message": "internal server error"}})
+		return
+	}
+	logger.With(ctx, map[string]any{"id": id}).Info("snippet deleted")
+	c.JSON(http.StatusNoContent, nil)
 }

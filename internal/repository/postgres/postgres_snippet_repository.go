@@ -173,13 +173,26 @@ func (r *SnippetRepository) Update(ctx context.Context, s domain.Snippet) error 
 		return fmt.Errorf("marshal tags: %w", err)
 	}
 	const q = `
-UPDATE snippets 
+UPDATE snippets
 SET content = $2, tags = $3::jsonb, expires_at = $4
 WHERE id = $1
 `
 	ct, err := r.pool.Exec(ctx, q, s.ID, s.Content, string(tagsJSON), expires)
 	if err != nil {
 		return fmt.Errorf("update snippet: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
+}
+
+// Delete removes a snippet from Postgres by ID.
+func (r *SnippetRepository) Delete(ctx context.Context, id string) error {
+	const q = `DELETE FROM snippets WHERE id = $1`
+	ct, err := r.pool.Exec(ctx, q, id)
+	if err != nil {
+		return fmt.Errorf("delete snippet: %w", err)
 	}
 	if ct.RowsAffected() == 0 {
 		return repository.ErrNotFound

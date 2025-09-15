@@ -1,0 +1,265 @@
+# Bonsai API Deployment with Atlas Migration Init Container
+# The init container runs migrations before app pods become Ready
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bonsai-api
+  namespace: default
+  labels:
+    app: bonsai
+    component: api
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: bonsai
+      component: api
+  template:
+    metadata:
+      labels:
+        app: bonsai
+        component: api
+      annotations:
+        # Force restart on configmap changes
+        checksum/config: "${CONFIG_CHECKSUM}"
+    spec:
+      serviceAccountName: bonsai-api
+
+      # Init container runs Atlas migrations before app starts
+      initContainers:
+      - name: atlas-migration
+        image: arigaio/atlas:latest
+        imagePullPolicy: Always
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Init container: Starting Atlas migration..."
+
+          # Validate environment
+          if [ -z "$DATABASE_URL" ]; then
+            echo "ERROR: DATABASE_URL not set"
+            exit 1
+          fi
+
+          # Create working directory
+          mkdir -p /tmp/atlas-work
+          cd /tmp/atlas-work
+
+          # Copy configuration files
+          cat /etc/atlas/atlas.hcl > atlas.hcl
+          cp -r /etc/atlas/schema schema/
+          cp -r /etc/atlas/migrations atlas-migrations/
+
+          # Check migration status first
+          echo "Checking migration status..."
+          atlas migrate status --env production
+
+          # Dry run to validate migrations
+          echo "Running migration dry-run..."
+          if ! atlas migrate apply --env production --dry-run; then
+            echo "ERROR: Migration dry-run failed"
+            exit 1
+          fi
+
+          # Apply migrations with built-in advisory locking
+          echo "Applying migrations..."
+          atlas migrate apply --env production
+
+          echo "Init container: Migration completed successfully!"
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: bonsai-database
+              key: url
+        - name: ATLAS_ENV
+          value: "production"
+        volumeMounts:
+        - name: atlas-config
+          mountPath: /etc/atlas
+          readOnly: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+
+      # Main application container
+      containers:
+      - name: bonsai-api
+        image: bonsai:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: BONSAI_PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: bonsai-database
+              key: url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: bonsai-redis
+              key: url
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /v1/livez
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /v1/readyz
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        # Resource limits
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        # Security context
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        # Volume mounts for temp files
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: app-cache
+          mountPath: /app/cache
+
+      volumes:
+      - name: atlas-config
+        configMap:
+          name: bonsai-atlas-config
+      - name: tmp
+        emptyDir: {}
+      - name: app-cache
+        emptyDir: {}
+
+      # Pod security and scheduling
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      # Ensure pods are spread across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - bonsai
+                - key: component
+                  operator: In
+                  values:
+                  - api
+              topologyKey: kubernetes.io/hostname
+
+      # Node selection
+      nodeSelector:
+        kubernetes.io/os: linux
+
+---
+# Service for Bonsai API
+apiVersion: v1
+kind: Service
+metadata:
+  name: bonsai-api
+  namespace: default
+  labels:
+    app: bonsai
+    component: api
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app: bonsai
+    component: api
+
+---
+# ServiceAccount for application
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bonsai-api
+  namespace: default
+  labels:
+    app: bonsai
+    component: api
+
+---
+# Role for application (minimal permissions)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bonsai-api
+  namespace: default
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+  resourceNames: ["bonsai-database", "bonsai-redis"]
+
+---
+# RoleBinding for application service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bonsai-api
+  namespace: default
+subjects:
+- kind: ServiceAccount
+  name: bonsai-api
+  namespace: default
+roleRef:
+  kind: Role
+  name: bonsai-api
+  apiGroup: rbac.authorization.k8s.io

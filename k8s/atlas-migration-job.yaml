@@ -1,0 +1,189 @@
+# Atlas Migration Job for Kubernetes
+# Runs Atlas migrations as a one-off Job with advisory locking
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bonsai-atlas-migration
+  namespace: default
+  labels:
+    app: bonsai
+    component: migration
+    version: v1.0.0
+  annotations:
+    # Ensure migrations run before deployments
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  # Don't retry failed migrations automatically - investigate manually
+  backoffLimit: 0
+  # Clean up completed jobs after 24 hours
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: bonsai
+        component: migration
+    spec:
+      restartPolicy: Never
+      # Use service account with database access
+      serviceAccountName: bonsai-migration
+      containers:
+      - name: atlas-migrate
+        image: arigaio/atlas:latest
+        imagePullPolicy: Always
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Starting Atlas migration..."
+
+          # Validate environment
+          if [ -z "$DATABASE_URL" ]; then
+            echo "ERROR: DATABASE_URL not set"
+            exit 1
+          fi
+
+          # Create atlas.hcl from ConfigMap
+          cat /etc/atlas/atlas.hcl > /tmp/atlas.hcl
+
+          # Copy schema files
+          cp -r /etc/atlas/schema /tmp/schema
+          cp -r /etc/atlas/migrations /tmp/atlas-migrations
+
+          cd /tmp
+
+          # Dry run first to check for issues
+          echo "Running migration dry-run..."
+          atlas migrate apply --env production --dry-run
+
+          # Apply migrations with advisory locking (built into Atlas)
+          echo "Applying migrations..."
+          atlas migrate apply --env production
+
+          echo "Migration completed successfully!"
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: bonsai-database
+              key: url
+        - name: ATLAS_ENV
+          value: "production"
+        volumeMounts:
+        - name: atlas-config
+          mountPath: /etc/atlas
+          readOnly: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        # Security context
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+      volumes:
+      - name: atlas-config
+        configMap:
+          name: bonsai-atlas-config
+      # Node selection for database access
+      nodeSelector:
+        kubernetes.io/os: linux
+      # Tolerate database maintenance windows
+      tolerations:
+      - key: "database-maintenance"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+
+---
+# ConfigMap containing Atlas configuration and schema
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bonsai-atlas-config
+  namespace: default
+  labels:
+    app: bonsai
+    component: migration
+data:
+  atlas.hcl: |
+    # Atlas production configuration
+    env "production" {
+      src = "file://schema"
+      url = env("DATABASE_URL")
+      migration {
+        dir = "file://atlas-migrations"
+      }
+      diff {
+        concurrent_index {
+          create = true
+          drop = true
+        }
+      }
+      # Strict production lint checks
+      lint {
+        destructive {
+          error = true
+        }
+        data_depend {
+          error = true
+        }
+        naming {
+          error = true
+        }
+      }
+    }
+
+    format {
+      migrate {
+        diff = "{{ sql . \"  \" }}"
+      }
+    }
+
+---
+# ServiceAccount for migration job
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bonsai-migration
+  namespace: default
+  labels:
+    app: bonsai
+    component: migration
+
+---
+# Role for migration operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bonsai-migration
+  namespace: default
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list"]
+
+---
+# RoleBinding for migration service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bonsai-migration
+  namespace: default
+subjects:
+- kind: ServiceAccount
+  name: bonsai-migration
+  namespace: default
+roleRef:
+  kind: Role
+  name: bonsai-migration
+  apiGroup: rbac.authorization.k8s.io

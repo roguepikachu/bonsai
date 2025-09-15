@@ -95,19 +95,25 @@ func (t *testSvc) UpdateSnippet(_ context.Context, id string, content string, ex
 	return existing, nil
 }
 
+func (t *testSvc) DeleteSnippet(_ context.Context, id string) error {
+	if t.snippets == nil {
+		return service.ErrSnippetNotFound
+	}
+
+	if _, ok := t.snippets[id]; !ok {
+		return service.ErrSnippetNotFound
+	}
+
+	delete(t.snippets, id)
+	return nil
+}
+
 func TestNewRouter_RoutesBasic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := NewRouter(h.NewHandler(&testSvc{}), h.NewHealthHandler(nil, nil))
 
-	// Health
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/health", nil))
-	if w.Code != http.StatusOK {
-		t.Fatalf("/v1/health want 200, got %d", w.Code)
-	}
-
 	// Liveness
-	w = httptest.NewRecorder()
+	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/livez", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("/v1/livez want 200, got %d", w.Code)
@@ -153,7 +159,6 @@ func TestRouter_HealthEndpoints(t *testing.T) {
 		path     string
 		expected int
 	}{
-		{"Health", "/v1/health", http.StatusOK},
 		{"Liveness", "/v1/livez", http.StatusOK},
 		{"Readiness healthy", "/v1/readyz", http.StatusOK},
 	}
@@ -235,7 +240,6 @@ func TestRouter_InvalidRoutes(t *testing.T) {
 		{"Invalid path", http.MethodGet, "/invalid", http.StatusNotFound},
 		{"Wrong version", http.MethodGet, "/v2/snippets", http.StatusNotFound},
 		{"Missing resource", http.MethodGet, "/v1/", http.StatusNotFound},
-		{"Wrong method on health", http.MethodDelete, "/v1/health", http.StatusNotFound},       // health only accepts GET
 		{"Wrong path structure", http.MethodGet, "/v1/snippets/", http.StatusMovedPermanently}, // gin redirects trailing slash
 	}
 
@@ -256,7 +260,7 @@ func TestRouter_MiddlewareOrder(t *testing.T) {
 
 	// Test that middleware is applied correctly
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/health", nil))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/livez", nil))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
@@ -412,7 +416,7 @@ func TestRouter_Headers(t *testing.T) {
 
 	// Test with custom headers
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/livez", nil)
 	req.Header.Set("X-Request-ID", "test-request-123")
 	req.Header.Set("X-Client-ID", "test-client-456")
 	req.Header.Set("Authorization", "Bearer token123")
@@ -458,7 +462,7 @@ func TestRouter_ConcurrentRequests(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func(idx int) {
 			w := httptest.NewRecorder()
-			path := "/v1/health"
+			path := "/v1/livez"
 			if idx%2 == 0 {
 				path = "/v1/snippets"
 			}

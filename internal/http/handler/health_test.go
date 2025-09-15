@@ -44,18 +44,6 @@ func (s slowPinger) Ping(ctx context.Context) error {
 	}
 }
 
-func TestHealth(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.GET("/v1/health", Health)
-	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
-	}
-}
-
 func TestLiveness_OK(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	hh := &HealthHandler{pingTimeout: time.Second}
@@ -103,32 +91,6 @@ func TestReadiness_FailDeps(t *testing.T) {
 	data := resp["data"].(map[string]interface{})
 	if data["ready"] != true {
 		t.Fatalf("expected ready true (no deps), got %v", data["ready"])
-	}
-}
-
-func TestHealth_ResponseFormat(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.GET("/v1/health", Health)
-	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
-	}
-
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
-	}
-
-	data := resp["data"].(map[string]interface{})
-	if data["ok"] != true {
-		t.Fatalf("expected ok true, got %v", data["ok"])
-	}
-	if resp["message"] != "ok" {
-		t.Fatalf("expected message ok, got %v", resp["message"])
 	}
 }
 
@@ -378,23 +340,6 @@ func TestLiveness_HTTPMethods(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, httptest.NewRequest(method, "/v1/livez", nil))
-			if w.Code != http.StatusOK {
-				t.Fatalf("want 200 for %s, got %d", method, w.Code)
-			}
-		})
-	}
-}
-
-func TestHealth_HTTPMethods(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.Any("/v1/health", Health)
-
-	methods := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodHead}
-	for _, method := range methods {
-		t.Run(method, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			r.ServeHTTP(w, httptest.NewRequest(method, "/v1/health", nil))
 			if w.Code != http.StatusOK {
 				t.Fatalf("want 200 for %s, got %d", method, w.Code)
 			}

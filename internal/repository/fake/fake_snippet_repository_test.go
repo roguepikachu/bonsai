@@ -437,7 +437,7 @@ func TestFakeRepo_List_PageBoundaries(t *testing.T) {
 	}
 }
 
-func TestFakeRepo_DeleteByID(t *testing.T) {
+func TestFakeRepo_Delete(t *testing.T) {
 	r := NewSnippetRepository()
 	ctx := context.Background()
 	now := time.Now()
@@ -454,7 +454,9 @@ func TestFakeRepo_DeleteByID(t *testing.T) {
 	}
 
 	// Delete it
-	r.DeleteByID("del1")
+	if err := r.Delete(ctx, "del1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
 
 	// Verify it's gone
 	_, err := r.FindByID(ctx, "del1")
@@ -462,7 +464,112 @@ func TestFakeRepo_DeleteByID(t *testing.T) {
 		t.Fatalf("expected ErrNotFound after delete, got %v", err)
 	}
 
-	// Delete non-existent ID (should not panic)
+	// Delete non-existent ID (should return ErrNotFound)
+	err = r.Delete(ctx, "nonexistent")
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for non-existent ID, got %v", err)
+	}
+}
+
+func TestFakeRepo_Delete_EmptyID(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+
+	// Delete with empty ID
+	err := r.Delete(ctx, "")
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for empty ID, got %v", err)
+	}
+}
+
+func TestFakeRepo_Delete_AfterUpdate(t *testing.T) {
+	const updatedContent = "updated"
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet
+	s := domain.Snippet{ID: "upd_del1", Content: "original", CreatedAt: now}
+	if err := r.Insert(ctx, s); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Update it
+	s.Content = updatedContent
+	if err := r.Update(ctx, s); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	// Verify update worked
+	got, err := r.FindByID(ctx, "upd_del1")
+	if err != nil {
+		t.Fatalf("find after update: %v", err)
+	}
+	if got.Content != updatedContent {
+		t.Fatalf("expected 'updated', got %s", got.Content)
+	}
+
+	// Delete it
+	if err := r.Delete(ctx, "upd_del1"); err != nil {
+		t.Fatalf("delete after update: %v", err)
+	}
+
+	// Verify it's gone
+	_, err = r.FindByID(ctx, "upd_del1")
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	}
+}
+
+func TestFakeRepo_Delete_MultipleTimes(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet
+	s := domain.Snippet{ID: "multi_del1", Content: "content", CreatedAt: now}
+	if err := r.Insert(ctx, s); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Delete it once
+	if err := r.Delete(ctx, "multi_del1"); err != nil {
+		t.Fatalf("first delete: %v", err)
+	}
+
+	// Delete it again (should return ErrNotFound)
+	err := r.Delete(ctx, "multi_del1")
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound on second delete, got %v", err)
+	}
+}
+
+func TestFakeRepo_DeleteByID(t *testing.T) {
+	r := NewSnippetRepository()
+	ctx := context.Background()
+	now := time.Now()
+
+	// Insert snippet
+	s := domain.Snippet{ID: "del2", Content: "to delete", CreatedAt: now}
+	if err := r.Insert(ctx, s); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Verify it exists
+	if _, err := r.FindByID(ctx, "del2"); err != nil {
+		t.Fatalf("find before delete: %v", err)
+	}
+
+	// Delete it using DeleteByID (testing helper method)
+	r.DeleteByID("del2")
+
+	// Verify it's gone
+	_, err := r.FindByID(ctx, "del2")
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	}
+
+	// DeleteByID on non-existent ID (should not panic)
 	r.DeleteByID("nonexistent")
 }
 
@@ -530,12 +637,13 @@ func TestFakeRepo_Update_Basic(t *testing.T) {
 		t.Fatalf("insert original: %v", err)
 	}
 
+	const updatedTag = "updated"
 	// Update the snippet
 	updated := domain.Snippet{
 		ID:        "update1",
 		Content:   "updated content",
 		CreatedAt: now, // Should preserve this
-		Tags:      []string{"updated", "tag"},
+		Tags:      []string{updatedTag, "tag"},
 		ExpiresAt: now.Add(2 * time.Hour),
 	}
 	if err := r.Update(ctx, updated); err != nil {
@@ -550,7 +658,7 @@ func TestFakeRepo_Update_Basic(t *testing.T) {
 	if got.Content != "updated content" {
 		t.Fatalf("expected 'updated content', got %s", got.Content)
 	}
-	if len(got.Tags) != 2 || got.Tags[0] != "updated" || got.Tags[1] != "tag" {
+	if len(got.Tags) != 2 || got.Tags[0] != updatedTag || got.Tags[1] != "tag" {
 		t.Fatalf("expected tags [updated, tag], got %v", got.Tags)
 	}
 	if !got.ExpiresAt.Equal(now.Add(2 * time.Hour)) {

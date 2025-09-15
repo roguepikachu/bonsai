@@ -90,6 +90,19 @@ func (f *fakeRepo) Update(_ context.Context, s domain.Snippet) error {
 	return nil
 }
 
+func (f *fakeRepo) Delete(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.findByID == nil {
+		return repository.ErrNotFound
+	}
+	if _, ok := f.findByID[id]; !ok {
+		return repository.ErrNotFound
+	}
+	delete(f.findByID, id)
+	return nil
+}
+
 func TestCreateSnippet_NoExpiry(t *testing.T) {
 	fixed := time.Date(2025, 8, 30, 12, 0, 0, 0, time.UTC)
 	repo := &fakeRepo{}
@@ -1126,5 +1139,225 @@ func TestUpdateSnippet_UnicodeID(t *testing.T) {
 	}
 	if updated.ID != unicodeID {
 		t.Error("expected unicode ID preserved")
+	}
+}
+
+func TestDeleteSnippet_Success(t *testing.T) {
+	now := time.Now()
+	existing := domain.Snippet{
+		ID:        "del1",
+		Content:   "to be deleted",
+		CreatedAt: now,
+	}
+	repo := &fakeRepo{findByID: map[string]domain.Snippet{"del1": existing}}
+	s := NewServiceWithOptions(repo, stubClock{t: now})
+
+	err := s.DeleteSnippet(context.Background(), "del1")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+
+	// Verify snippet was deleted from repo
+	if _, ok := repo.findByID["del1"]; ok {
+		t.Error("expected snippet to be deleted from repository")
+	}
+}
+
+func TestDeleteSnippet_NotFound(t *testing.T) {
+	repo := &fakeRepo{findByID: map[string]domain.Snippet{}}
+	s := NewServiceWithOptions(repo, stubClock{t: time.Now()})
+
+	err := s.DeleteSnippet(context.Background(), "nonexistent")
+	if !errors.Is(err, ErrSnippetNotFound) {
+		t.Fatalf("expected ErrSnippetNotFound, got %v", err)
+	}
+}
+
+func TestDeleteSnippet_ExpiredSnippet(t *testing.T) {
+	now := time.Now()
+	past := now.Add(-time.Hour)
+	existing := domain.Snippet{
+		ID:        "expired1",
+		Content:   "expired content",
+		CreatedAt: past.Add(-time.Hour),
+		ExpiresAt: past,
+	}
+	repo := &fakeRepo{findByID: map[string]domain.Snippet{"expired1": existing}}
+	s := NewServiceWithOptions(repo, stubClock{t: now})
+
+	// Should allow deletion of expired snippets
+	err := s.DeleteSnippet(context.Background(), "expired1")
+	if err != nil {
+		t.Fatalf("expected to allow deletion of expired snippet, got err: %v", err)
+	}
+
+	// Verify snippet was deleted
+	if _, ok := repo.findByID["expired1"]; ok {
+		t.Error("expected expired snippet to be deleted from repository")
+	}
+}
+
+func TestDeleteSnippet_EmptyID(t *testing.T) {
+	repo := &fakeRepo{findByID: map[string]domain.Snippet{}}
+	s := NewServiceWithOptions(repo, stubClock{t: time.Now()})
+
+	err := s.DeleteSnippet(context.Background(), "")
+	if !errors.Is(err, ErrSnippetNotFound) {
+		t.Fatalf("expected ErrSnippetNotFound for empty ID, got %v", err)
+	}
+}
+
+func TestDeleteSnippet_RepositoryError(t *testing.T) {
+	now := time.Now()
+	existing := domain.Snippet{
+		ID:        "del2",
+		Content:   "content",
+		CreatedAt: now,
+	}
+	repo := &fakeRepo{
+		findByID: map[string]domain.Snippet{"del2": existing},
+		findErr:  fmt.Errorf("database connection lost"),
+	}
+	s := NewServiceWithOptions(repo, stubClock{t: now})
+
+	err := s.DeleteSnippet(context.Background(), "del2")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "database connection lost") {
+		t.Fatalf("expected database error, got %v", err)
+	}
+}
+
+func TestDeleteSnippet_LongID(t *testing.T) {
+	longID := ""
+	for i := 0; i < 1000; i++ {
+		longID += "a"
+	}
+	existing := domain.Snippet{
+		ID:        longID,
+		Content:   "content",
+		CreatedAt: time.Now(),
+	}
+	repo := &fakeRepo{findByID: map[string]domain.Snippet{longID: existing}}
+	s := NewServiceWithOptions(repo, stubClock{t: time.Now()})
+
+	err := s.DeleteSnippet(context.Background(), longID)
+	if err != nil {
+		t.Fatalf("unexpected err for long ID: %v", err)
+	}
+
+	// Verify deletion
+	if _, ok := repo.findByID[longID]; ok {
+		t.Error("expected snippet with long ID to be deleted")
+	}
+}
+
+func TestDeleteSnippet_SpecialCharacterID(t *testing.T) {
+	specialID := "!@#$%^&*()_+-=[]{}|;':\",./<>?"
+	existing := domain.Snippet{
+		ID:        specialID,
+		Content:   "content",
+		CreatedAt: time.Now(),
+	}
+	repo := &fakeRepo{findByID: map[string]domain.Snippet{specialID: existing}}
+	s := NewServiceWithOptions(repo, stubClock{t: time.Now()})
+
+	err := s.DeleteSnippet(context.Background(), specialID)
+	if err != nil {
+		t.Fatalf("unexpected err for special character ID: %v", err)
+	}
+
+	// Verify deletion
+	if _, ok := repo.findByID[specialID]; ok {
+		t.Error("expected snippet with special ID to be deleted")
+	}
+}
+
+func TestDeleteSnippet_UnicodeID(t *testing.T) {
+	unicodeID := "删除-🔥-emoji-id-αβγ"
+	existing := domain.Snippet{
+		ID:        unicodeID,
+		Content:   "content",
+		CreatedAt: time.Now(),
+	}
+	repo := &fakeRepo{findByID: map[string]domain.Snippet{unicodeID: existing}}
+	s := NewServiceWithOptions(repo, stubClock{t: time.Now()})
+
+	err := s.DeleteSnippet(context.Background(), unicodeID)
+	if err != nil {
+		t.Fatalf("unexpected err for unicode ID: %v", err)
+	}
+
+	// Verify deletion
+	if _, ok := repo.findByID[unicodeID]; ok {
+		t.Error("expected snippet with unicode ID to be deleted")
+	}
+}
+
+func TestDeleteSnippet_ContextCancellation(t *testing.T) {
+	existing := domain.Snippet{
+		ID:        "ctx1",
+		Content:   "content",
+		CreatedAt: time.Now(),
+	}
+	repo := &fakeRepo{findByID: map[string]domain.Snippet{"ctx1": existing}}
+	s := NewServiceWithOptions(repo, stubClock{t: time.Now()})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// The current implementation doesn't check context, but test it anyway
+	err := s.DeleteSnippet(ctx, "ctx1")
+	// Since our implementation doesn't check context, it should succeed
+	// In a real implementation with context checks, this might fail
+	if err != nil {
+		// This is acceptable if the implementation checks context
+		t.Logf("delete with cancelled context: %v", err)
+	}
+}
+
+func TestDeleteSnippet_NoExpirySnippet(t *testing.T) {
+	now := time.Now()
+	existing := domain.Snippet{
+		ID:        "noexp1",
+		Content:   "never expires",
+		CreatedAt: now,
+		ExpiresAt: time.Time{}, // Zero value means no expiry
+	}
+	repo := &fakeRepo{findByID: map[string]domain.Snippet{"noexp1": existing}}
+	s := NewServiceWithOptions(repo, stubClock{t: now})
+
+	err := s.DeleteSnippet(context.Background(), "noexp1")
+	if err != nil {
+		t.Fatalf("unexpected err for non-expiring snippet: %v", err)
+	}
+
+	// Verify deletion
+	if _, ok := repo.findByID["noexp1"]; ok {
+		t.Error("expected non-expiring snippet to be deleted")
+	}
+}
+
+func TestDeleteSnippet_FutureExpirySnippet(t *testing.T) {
+	now := time.Now()
+	future := now.Add(time.Hour)
+	existing := domain.Snippet{
+		ID:        "future1",
+		Content:   "expires in future",
+		CreatedAt: now,
+		ExpiresAt: future,
+	}
+	repo := &fakeRepo{findByID: map[string]domain.Snippet{"future1": existing}}
+	s := NewServiceWithOptions(repo, stubClock{t: now})
+
+	err := s.DeleteSnippet(context.Background(), "future1")
+	if err != nil {
+		t.Fatalf("unexpected err for future-expiring snippet: %v", err)
+	}
+
+	// Verify deletion
+	if _, ok := repo.findByID["future1"]; ok {
+		t.Error("expected future-expiring snippet to be deleted")
 	}
 }

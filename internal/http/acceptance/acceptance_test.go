@@ -218,7 +218,7 @@ func startTestServer() error {
 
 	// Wait for server to be ready
 	for i := 0; i < 10; i++ {
-		resp, err := client.Get(baseURL + "/v1/health")
+		resp, err := client.Get(baseURL + "/v1/livez")
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close() // Best effort cleanup
 			return nil
@@ -467,15 +467,15 @@ func getRedisKeyCount(t *testing.T, pattern string) int {
 }
 
 func Test_HealthEndpoints(t *testing.T) {
-	// Test /v1/health
+	// Test /v1/livez
 	var healthResp struct {
 		Code int            `json:"code"`
 		Data map[string]any `json:"data"`
 		Msg  string         `json:"message"`
 	}
-	code, _ := doJSONRequest(t, http.MethodGet, baseURL+"/v1/health", nil, &healthResp)
-	if code != http.StatusOK || healthResp.Code != 200 || healthResp.Data["ok"] != true {
-		t.Errorf("/health failed: code=%d resp=%+v", code, healthResp)
+	code, _ := doJSONRequest(t, http.MethodGet, baseURL+"/v1/livez", nil, &healthResp)
+	if code != http.StatusOK || healthResp.Code != 200 || healthResp.Data["status"] != "alive" {
+		t.Errorf("/livez failed: code=%d resp=%+v", code, healthResp)
 	}
 
 	// Test /v1/livez
@@ -965,7 +965,7 @@ func Test_CacheHeaders(t *testing.T) {
 
 func Test_HeaderPropagation(t *testing.T) {
 	// Test that X-Request-ID and X-Client-ID are properly handled
-	req, _ := http.NewRequest(http.MethodGet, baseURL+"/v1/health", nil)
+	req, _ := http.NewRequest(http.MethodGet, baseURL+"/v1/livez", nil)
 	req.Header.Set("X-Request-ID", "test-request-123")
 	req.Header.Set("X-Client-ID", "test-client-456")
 
@@ -2232,4 +2232,380 @@ func equalStringArrays(jsonArray []interface{}, expected []string) bool {
 		}
 	}
 	return true
+}
+
+func Test_DeleteSnippet(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create a snippet to delete
+	createReq := domain.CreateSnippetRequestDTO{
+		Content: "To be deleted",
+		Tags:    []string{"delete", "test"},
+	}
+	var created map[string]any
+	code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+	if code != http.StatusCreated {
+		t.Fatalf("Failed to create snippet: %d", code)
+	}
+	snippetID := created["id"].(string)
+
+	// Delete the snippet
+	code, _ = doJSONRequest(t, http.MethodDelete, baseURL+"/v1/snippets/"+snippetID, nil, nil)
+	if code != http.StatusNoContent {
+		t.Errorf("Expected 204 No Content, got %d", code)
+	}
+
+	// Verify snippet is deleted (should return 404)
+	var notFound map[string]any
+	code, _ = doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets/"+snippetID, nil, &notFound)
+	if code != http.StatusNotFound {
+		t.Errorf("Expected 404 Not Found after deletion, got %d", code)
+	}
+
+	// Verify error response structure
+	if errorObj, ok := notFound["error"].(map[string]interface{}); ok {
+		if errorObj["code"] != "not_found" {
+			t.Errorf("Expected error code 'not_found', got %v", errorObj["code"])
+		}
+	} else {
+		t.Error("Expected error object in response")
+	}
+}
+
+func Test_DeleteNonExistentSnippet(t *testing.T) {
+	cleanDatabase(t)
+
+	// Try to delete a non-existent snippet
+	var errResp map[string]any
+	code, _ := doJSONRequest(t, http.MethodDelete, baseURL+"/v1/snippets/non-existent-id", nil, &errResp)
+	if code != http.StatusNotFound {
+		t.Errorf("Expected 404 Not Found for non-existent snippet, got %d", code)
+	}
+
+	// Verify error response
+	if errorObj, ok := errResp["error"].(map[string]interface{}); ok {
+		if errorObj["code"] != "not_found" {
+			t.Errorf("Expected error code 'not_found', got %v", errorObj["code"])
+		}
+		if errorObj["message"] != "not found" {
+			t.Errorf("Expected error message 'not found', got %v", errorObj["message"])
+		}
+	} else {
+		t.Error("Expected error object in response")
+	}
+}
+
+func Test_DeleteExpiredSnippet(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create an expired snippet directly in database
+	pool, err := pgxpool.New(context.Background(), testDatabaseURL)
+	if err != nil {
+		t.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer pool.Close()
+
+	snippetID := "expired-snippet-for-delete"
+	pastTime := time.Now().Add(-time.Hour)
+	_, err = pool.Exec(context.Background(), `
+		INSERT INTO snippets (id, content, tags, created_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5)`,
+		snippetID, "Expired content", []string{"expired"}, time.Now().Add(-2*time.Hour), pastTime)
+	if err != nil {
+		t.Fatalf("Failed to insert expired snippet: %v", err)
+	}
+
+	// Should be able to delete expired snippet
+	code, _ := doJSONRequest(t, http.MethodDelete, baseURL+"/v1/snippets/"+snippetID, nil, nil)
+	if code != http.StatusNoContent {
+		t.Errorf("Expected 204 No Content for deleting expired snippet, got %d", code)
+	}
+
+	// Verify it's actually deleted from database
+	var count int
+	err = pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM snippets WHERE id = $1", snippetID).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to count snippets: %v", err)
+	}
+	if count != 0 {
+		t.Error("Expired snippet was not deleted from database")
+	}
+}
+
+func Test_DeleteWithEmptyID(t *testing.T) {
+	// Try to delete with empty ID (the route shouldn't match)
+	req, err := http.NewRequest(http.MethodDelete, baseURL+"/v1/snippets/", nil)
+	if err != nil {
+		t.Fatalf("Create request failed: %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Should get 404 because route doesn't match
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("Expected 404 for empty ID, got %d", resp.StatusCode)
+	}
+}
+
+func Test_DeleteCacheInvalidation(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create a snippet
+	createReq := domain.CreateSnippetRequestDTO{
+		Content: "Cached content",
+		Tags:    []string{"cache"},
+	}
+	var created map[string]any
+	code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+	if code != http.StatusCreated {
+		t.Fatalf("Failed to create snippet: %d", code)
+	}
+	snippetID := created["id"].(string)
+
+	// Get it twice to ensure it's cached
+	code, _ = doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets/"+snippetID, nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("Failed to get snippet: %d", code)
+	}
+
+	code, _ = doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets/"+snippetID, nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("Failed to get snippet second time: %d", code)
+	}
+	// Second request might be from cache (depending on implementation)
+
+	// Delete the snippet
+	code, _ = doJSONRequest(t, http.MethodDelete, baseURL+"/v1/snippets/"+snippetID, nil, nil)
+	if code != http.StatusNoContent {
+		t.Errorf("Expected 204 No Content, got %d", code)
+	}
+
+	// Try to get it again - should be 404 (cache should be invalidated)
+	code, _ = doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets/"+snippetID, nil, nil)
+	if code != http.StatusNotFound {
+		t.Errorf("Expected 404 after delete (cache should be invalidated), got %d", code)
+	}
+}
+
+func Test_DeleteAndList(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create multiple snippets
+	var snippetIDs []string
+	for i := 0; i < 5; i++ {
+		createReq := domain.CreateSnippetRequestDTO{
+			Content: fmt.Sprintf("Content %d", i),
+			Tags:    []string{"list-test"},
+		}
+		var created map[string]any
+		code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+		if code != http.StatusCreated {
+			t.Fatalf("Failed to create snippet %d: %d", i, code)
+		}
+		snippetIDs = append(snippetIDs, created["id"].(string))
+	}
+
+	// List all - should have 5
+	var listResp map[string]any
+	code, _ := doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets?tag=list-test", nil, &listResp)
+	if code != http.StatusOK {
+		t.Fatalf("Failed to list snippets: %d", code)
+	}
+	items := listResp["items"].([]interface{})
+	if len(items) != 5 {
+		t.Errorf("Expected 5 snippets, got %d", len(items))
+	}
+
+	// Delete middle snippet
+	code, _ = doJSONRequest(t, http.MethodDelete, baseURL+"/v1/snippets/"+snippetIDs[2], nil, nil)
+	if code != http.StatusNoContent {
+		t.Errorf("Failed to delete snippet: %d", code)
+	}
+
+	// List again - should have 4
+	code, _ = doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets?tag=list-test", nil, &listResp)
+	if code != http.StatusOK {
+		t.Fatalf("Failed to list snippets after delete: %d", code)
+	}
+	items = listResp["items"].([]interface{})
+	if len(items) != 4 {
+		t.Errorf("Expected 4 snippets after delete, got %d", len(items))
+	}
+
+	// Verify deleted snippet is not in the list
+	for _, item := range items {
+		itemMap := item.(map[string]interface{})
+		if itemMap["id"] == snippetIDs[2] {
+			t.Error("Deleted snippet still appears in list")
+		}
+	}
+}
+
+func Test_DeleteAfterUpdate(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create a snippet
+	createReq := domain.CreateSnippetRequestDTO{
+		Content: "Original content",
+		Tags:    []string{"update-delete"},
+	}
+	var created map[string]any
+	code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+	if code != http.StatusCreated {
+		t.Fatalf("Failed to create snippet: %d", code)
+	}
+	snippetID := created["id"].(string)
+
+	// Update it
+	updateReq := domain.UpdateSnippetRequestDTO{
+		Content: "Updated content",
+		Tags:    []string{"updated", "delete"},
+	}
+	code, _ = doJSONRequest(t, http.MethodPut, baseURL+"/v1/snippets/"+snippetID, updateReq, nil)
+	if code != http.StatusOK {
+		t.Fatalf("Failed to update snippet: %d", code)
+	}
+
+	// Delete it
+	code, _ = doJSONRequest(t, http.MethodDelete, baseURL+"/v1/snippets/"+snippetID, nil, nil)
+	if code != http.StatusNoContent {
+		t.Errorf("Expected 204 No Content after delete, got %d", code)
+	}
+
+	// Verify it's deleted
+	code, _ = doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets/"+snippetID, nil, nil)
+	if code != http.StatusNotFound {
+		t.Errorf("Expected 404 after delete, got %d", code)
+	}
+}
+
+func Test_DeleteIdempotency(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create a snippet
+	createReq := domain.CreateSnippetRequestDTO{
+		Content: "To be deleted multiple times",
+		Tags:    []string{"idempotent"},
+	}
+	var created map[string]any
+	code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+	if code != http.StatusCreated {
+		t.Fatalf("Failed to create snippet: %d", code)
+	}
+	snippetID := created["id"].(string)
+
+	// Delete it first time
+	code, _ = doJSONRequest(t, http.MethodDelete, baseURL+"/v1/snippets/"+snippetID, nil, nil)
+	if code != http.StatusNoContent {
+		t.Errorf("First delete: expected 204, got %d", code)
+	}
+
+	// Delete it again - should get 404 (not idempotent, but expected behavior)
+	var errResp map[string]any
+	code, _ = doJSONRequest(t, http.MethodDelete, baseURL+"/v1/snippets/"+snippetID, nil, &errResp)
+	if code != http.StatusNotFound {
+		t.Errorf("Second delete: expected 404, got %d", code)
+	}
+
+	// Third delete - should still get 404
+	code, _ = doJSONRequest(t, http.MethodDelete, baseURL+"/v1/snippets/"+snippetID, nil, nil)
+	if code != http.StatusNotFound {
+		t.Errorf("Third delete: expected 404, got %d", code)
+	}
+}
+
+func Test_ConcurrentDeletes(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create a snippet
+	createReq := domain.CreateSnippetRequestDTO{
+		Content: "For concurrent deletion",
+		Tags:    []string{"concurrent"},
+	}
+	var created map[string]any
+	code, _ := doJSONRequest(t, http.MethodPost, baseURL+"/v1/snippets", createReq, &created)
+	if code != http.StatusCreated {
+		t.Fatalf("Failed to create snippet: %d", code)
+	}
+	snippetID := created["id"].(string)
+
+	// Try to delete concurrently
+	var wg sync.WaitGroup
+	successCount := 0
+	notFoundCount := 0
+	var mu sync.Mutex
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			code, _ := doJSONRequest(t, http.MethodDelete, baseURL+"/v1/snippets/"+snippetID, nil, nil)
+			mu.Lock()
+			defer mu.Unlock()
+			switch code {
+			case http.StatusNoContent:
+				successCount++
+			case http.StatusNotFound:
+				notFoundCount++
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Exactly one should succeed, others should get 404
+	if successCount != 1 {
+		t.Errorf("Expected exactly 1 successful delete, got %d", successCount)
+	}
+	if successCount+notFoundCount != 10 {
+		t.Errorf("Expected all requests to either succeed or get 404, got %d success + %d not found = %d total",
+			successCount, notFoundCount, successCount+notFoundCount)
+	}
+
+	// Verify snippet is actually deleted
+	code, _ = doJSONRequest(t, http.MethodGet, baseURL+"/v1/snippets/"+snippetID, nil, nil)
+	if code != http.StatusNotFound {
+		t.Errorf("Snippet should be deleted, but GET returned %d", code)
+	}
+}
+
+func Test_DeleteWithSpecialCharacterID(t *testing.T) {
+	cleanDatabase(t)
+
+	// Create snippet with special ID using direct database insert
+	pool, err := pgxpool.New(context.Background(), testDatabaseURL)
+	if err != nil {
+		t.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer pool.Close()
+
+	specialID := "test-id-with-special-chars-!@#$%"
+	_, err = pool.Exec(context.Background(), `
+		INSERT INTO snippets (id, content, tags, created_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5)`,
+		specialID, "Special content", []string{"special"}, time.Now(), nil)
+	if err != nil {
+		t.Fatalf("Failed to insert snippet: %v", err)
+	}
+
+	// URL encode the special ID
+	encodedID := "test-id-with-special-chars-!%40%23%24%25"
+
+	// Delete it
+	req, err := http.NewRequest(http.MethodDelete, baseURL+"/v1/snippets/"+encodedID, nil)
+	if err != nil {
+		t.Fatalf("Create request failed: %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("Expected 204 for delete with special ID, got %d", resp.StatusCode)
+	}
 }

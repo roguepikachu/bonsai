@@ -172,3 +172,28 @@ func (s *Service) UpdateSnippet(ctx context.Context, id string, content string, 
 
 	return updatedSnippet, nil
 }
+
+// DeleteSnippet deletes a snippet by ID.
+func (s *Service) DeleteSnippet(ctx context.Context, id string) error {
+	// First check if snippet exists
+	existing, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return fmt.Errorf("%w", ErrSnippetNotFound)
+		}
+		return fmt.Errorf("find by id: %w", err)
+	}
+
+	// Check if snippet is expired - we allow deletion of expired snippets
+	// This helps with cleanup, unlike update which blocks expired snippets
+	_ = existing // We found it, that's all we need
+
+	if err := s.repo.Delete(ctx, id); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return fmt.Errorf("%w", ErrSnippetNotFound)
+		}
+		return fmt.Errorf("delete snippet: %w", err)
+	}
+
+	return nil
+}

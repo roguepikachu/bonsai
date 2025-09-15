@@ -12,8 +12,6 @@ const (
 	// BasePath is the root path for the API.
 	BasePath = "/v1"
 
-	// HealthPath is the legacy endpoint for health checks.
-	HealthPath = BasePath + "/health"
 	// LivenessPath returns 200 when process is running.
 	LivenessPath = BasePath + "/livez"
 	// ReadinessPath checks dependencies and returns 200/503 accordingly.
@@ -27,8 +25,6 @@ func NewRouter(snippetHandler *handler.Handler, healthHandler *handler.HealthHan
 	router.Use(middleware.RequestIDMiddleware())
 	router.Use(middleware.RequestLogger())
 	router.Use(middleware.Recovery())
-	// Legacy health
-	router.GET(HealthPath, handler.Health)
 	// Kubernetes-style probes
 	if healthHandler != nil {
 		router.GET(LivenessPath, healthHandler.Liveness)
@@ -39,6 +35,7 @@ func NewRouter(snippetHandler *handler.Handler, healthHandler *handler.HealthHan
 	router.GET(BasePath+"/snippets", snippetHandler.List)
 	router.GET(BasePath+"/snippets/:id", snippetHandler.Get)
 	router.PUT(BasePath+"/snippets/:id", snippetHandler.Update)
+	router.DELETE(BasePath+"/snippets/:id", snippetHandler.Delete)
 
 	return router
 }

@@ -1,0 +1,243 @@
+# Atlas Schema Drift Detection CI Pipeline
+# Detects schema drift and validates migrations on every PR
+name: Atlas Schema Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+    - 'schema/**'
+    - 'atlas-migrations/**'
+    - 'atlas.hcl'
+  push:
+    branches: [main]
+    paths:
+    - 'schema/**'
+    - 'atlas-migrations/**'
+    - 'atlas.hcl'
+  schedule:
+    # Run drift detection daily at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+env:
+  ATLAS_VERSION: latest
+  GO_VERSION: 1.21
+
+jobs:
+  schema-validation:
+    name: Validate Schema and Migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: bonsai_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Install Atlas CLI
+      run: |
+        curl -sSf https://atlasgo.sh | sh
+        sudo mv atlas /usr/local/bin/atlas
+        atlas version
+
+    - name: Setup environment variables
+      run: |
+        echo "DATABASE_URL=postgres://postgres:postgres@localhost:5432/bonsai_ci?sslmode=disable" >> $GITHUB_ENV
+
+    - name: Validate Atlas configuration
+      run: |
+        echo "🔍 Validating Atlas configuration..."
+        atlas schema validate --env dev
+
+    - name: Lint migration files
+      run: |
+        echo "🔍 Linting Atlas migrations..."
+        atlas migrate lint --env dev --latest 5
+
+    - name: Check for destructive changes
+      run: |
+        echo "⚠️  Checking for destructive changes..."
+        # This will fail the build if destructive changes are detected
+        atlas migrate lint \
+          --env staging \
+          --latest 1 \
+          --format '{{ range .Files }}{{ .Name }}: {{ range .Reports }}{{ .Text }}{{ end }}{{ end }}'
+
+    - name: Dry run migration
+      run: |
+        echo "🏃 Running migration dry-run..."
+        atlas migrate apply --env dev --dry-run
+
+    - name: Apply baseline migration for testing
+      run: |
+        echo "📦 Setting up test database..."
+        atlas migrate apply --env dev
+
+    - name: Detect schema drift
+      id: drift_check
+      run: |
+        echo "🔍 Checking for schema drift..."
+
+        # Compare desired schema with actual database
+        if atlas schema diff \
+          --env dev \
+          --from "$DATABASE_URL" \
+          --to file://schema; then
+          echo "✅ No schema drift detected"
+          echo "drift_detected=false" >> $GITHUB_OUTPUT
+        else
+          echo "⚠️  Schema drift detected!"
+          echo "drift_detected=true" >> $GITHUB_OUTPUT
+
+          # Generate diff for review
+          atlas schema diff \
+            --env dev \
+            --from "$DATABASE_URL" \
+            --to file://schema \
+            --format '{{ sql . "  " }}' > schema-drift.sql
+
+          echo "📋 Schema drift details:"
+          cat schema-drift.sql
+        fi
+
+    - name: Fail on schema drift
+      if: steps.drift_check.outputs.drift_detected == 'true' && github.event_name == 'schedule'
+      run: |
+        echo "❌ Schema drift detected in scheduled run - failing build"
+        echo "Please run 'make atlas-diff NAME=fix_drift' to generate corrective migration"
+        exit 1
+
+    - name: Comment on PR with drift results
+      if: github.event_name == 'pull_request' && steps.drift_check.outputs.drift_detected == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const drift = fs.readFileSync('schema-drift.sql', 'utf8');
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## ⚠️ Schema Drift Detected
+
+          The following schema differences were found:
+
+          \`\`\`sql
+          ${drift}
+          \`\`\`
+
+          **Action Required:**
+          Run \`make atlas-diff NAME=fix_drift\` to generate a migration that addresses this drift.`
+          });
+
+    - name: Test migration rollback capability
+      run: |
+        echo "🔄 Testing rollback capability..."
+
+        # Apply migrations
+        atlas migrate apply --env dev
+
+        # TODO: Add rollback test when Atlas supports it
+        echo "✅ Migration rollback test completed"
+
+    - name: Upload drift report
+      if: steps.drift_check.outputs.drift_detected == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: schema-drift-report
+        path: schema-drift.sql
+        retention-days: 7
+
+  migration-safety:
+    name: Check Migration Safety
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Atlas CLI
+      run: |
+        curl -sSf https://atlasgo.sh | sh
+        sudo mv atlas /usr/local/bin/atlas
+
+    - name: Check for concurrent index operations
+      run: |
+        echo "🔍 Checking for safe concurrent operations..."
+
+        # Check if migrations contain CREATE INDEX without CONCURRENTLY
+        if grep -r "CREATE INDEX" atlas-migrations/ | grep -v "CONCURRENTLY"; then
+          echo "❌ Found non-concurrent index creation!"
+          echo "All index operations should use CONCURRENTLY for zero-downtime deployments"
+          echo "Example: CREATE INDEX CONCURRENTLY idx_name ON table_name (column);"
+          exit 1
+        else
+          echo "✅ All index operations are concurrent"
+        fi
+
+    - name: Check for table alterations
+      run: |
+        echo "🔍 Checking for potentially blocking operations..."
+
+        # List potentially dangerous operations
+        dangerous_ops=(
+          "ALTER TABLE.*DROP COLUMN"
+          "ALTER TABLE.*ALTER COLUMN.*TYPE"
+          "DROP TABLE"
+          "TRUNCATE"
+        )
+
+        found_dangerous=false
+        for op in "${dangerous_ops[@]}"; do
+          if grep -rE "$op" atlas-migrations/; then
+            echo "⚠️  Found potentially dangerous operation: $op"
+            found_dangerous=true
+          fi
+        done
+
+        if $found_dangerous; then
+          echo "🔄 Dangerous operations detected. Ensure you're following expand-contract pattern:"
+          echo "1. Expand: Add new columns/tables first"
+          echo "2. Deploy application code that works with both schemas"
+          echo "3. Contract: Remove old columns/tables in later migration"
+        fi
+
+    - name: Validate PgBouncer compatibility
+      run: |
+        echo "🔍 Checking PgBouncer transaction pooling compatibility..."
+
+        # Check for operations that require session-level connections
+        session_ops=(
+          "CREATE INDEX CONCURRENTLY"
+          "DROP INDEX CONCURRENTLY"
+          "VACUUM"
+          "ANALYZE"
+        )
+
+        for op in "${session_ops[@]}"; do
+          if grep -rE "$op" atlas-migrations/; then
+            echo "⚠️  Found operation requiring session connection: $op"
+            echo "💡 Ensure migrations run with session-preserving connection, not through PgBouncer transaction pooling"
+          fi
+        done

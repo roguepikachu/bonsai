@@ -26,6 +26,7 @@ const (
 	testID             = "test-id"
 	testBodyDefault    = `{"content":"test","expires_in":60,"tags":[]}`
 	testBodyNewContent = `{"content":"new content","expires_in":60,"tags":[]}`
+	internalErrorCode  = "internal_error"
 )
 
 type mockSnippetService struct {
@@ -35,12 +36,15 @@ type mockSnippetService struct {
 	listErr     error
 	getErr      error
 	updateErr   error
+	deleteErr   error
 	created     []domain.Snippet
 	updated     []domain.Snippet
+	deleted     []string
 	listCalls   int
 	createCalls int
 	getCalls    int
 	updateCalls int
+	deleteCalls int
 }
 
 func (m *mockSnippetService) CreateSnippet(_ context.Context, content string, expiresIn int, tags []string) (domain.Snippet, error) {
@@ -102,6 +106,19 @@ func (m *mockSnippetService) UpdateSnippet(_ context.Context, id string, content
 	return domain.Snippet{}, service.ErrSnippetNotFound
 }
 
+func (m *mockSnippetService) DeleteSnippet(_ context.Context, id string) error {
+	m.deleteCalls++
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
+	if _, ok := m.byID[id]; ok {
+		delete(m.byID, id)
+		m.deleted = append(m.deleted, id)
+		return nil
+	}
+	return service.ErrSnippetNotFound
+}
+
 // errSvc implements SnippetService and allows controlling GetSnippetByID results.
 type errSvc struct {
 	retErr  error
@@ -125,6 +142,10 @@ func (e errSvc) UpdateSnippet(_ context.Context, _ string, _ string, _ int, _ []
 	return e.snippet, e.retErr
 }
 
+func (e errSvc) DeleteSnippet(_ context.Context, _ string) error {
+	return e.retErr
+}
+
 // createSvc returns a fixed snippet for CreateSnippet to test the happy path.
 type createSvc struct{ out domain.Snippet }
 
@@ -142,6 +163,10 @@ func (createSvc) GetSnippetByID(_ context.Context, _ string) (domain.Snippet, se
 
 func (c createSvc) UpdateSnippet(_ context.Context, _ string, _ string, _ int, _ []string) (domain.Snippet, error) {
 	return c.out, nil
+}
+
+func (createSvc) DeleteSnippet(_ context.Context, _ string) error {
+	return nil
 }
 
 func TestSnippetList_OK(t *testing.T) {
@@ -1457,5 +1482,180 @@ func TestSnippetUpdate_VeryLargePayload(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400 for very large payload, got %d", w.Code)
+	}
+}
+
+func TestSnippetDelete_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &mockSnippetService{
+		byID: map[string]domain.Snippet{
+			testID: {ID: testID, Content: "to delete"},
+		},
+	}
+	h := NewHandler(svc)
+	r := gin.New()
+	r.DELETE("/v1/snippets/:id", h.Delete)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/v1/snippets/"+testID, nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d", w.Code)
+	}
+
+	// Verify it was deleted
+	if len(svc.deleted) != 1 || svc.deleted[0] != testID {
+		t.Fatalf("expected snippet to be deleted")
+	}
+
+	// Body should be empty for 204
+	if w.Body.Len() != 0 {
+		t.Fatalf("expected empty body for 204, got %s", w.Body.String())
+	}
+}
+
+func TestSnippetDelete_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &mockSnippetService{byID: map[string]domain.Snippet{}}
+	h := NewHandler(svc)
+	r := gin.New()
+	r.DELETE("/v1/snippets/:id", h.Delete)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/v1/snippets/nonexistent", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", w.Code)
+	}
+
+	// Check error response
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if errObj, ok := resp["error"].(map[string]any); ok {
+		if errObj["code"] != "not_found" {
+			t.Fatalf("want error code 'not_found', got %v", errObj["code"])
+		}
+	} else {
+		t.Fatal("expected error object in response")
+	}
+}
+
+func TestSnippetDelete_EmptyID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &mockSnippetService{}
+	h := NewHandler(svc)
+	r := gin.New()
+	r.DELETE("/v1/snippets/:id", h.Delete)
+
+	// Gin won't match route with empty :id param, but test the handler directly
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodDelete, "/v1/snippets/", nil) // Set request
+	c.Params = gin.Params{}                                                  // No id param
+	h.Delete(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 for empty ID, got %d", w.Code)
+	}
+}
+
+func TestSnippetDelete_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &mockSnippetService{
+		byID:      map[string]domain.Snippet{testID: {ID: testID}},
+		deleteErr: errors.New("database error"),
+	}
+	h := NewHandler(svc)
+	r := gin.New()
+	r.DELETE("/v1/snippets/:id", h.Delete)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/v1/snippets/"+testID, nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", w.Code)
+	}
+
+	// Check error response
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if errObj, ok := resp["error"].(map[string]any); ok {
+		if errObj["code"] != internalErrorCode {
+			t.Fatalf("want error code '%s', got %v", internalErrorCode, errObj["code"])
+		}
+	} else {
+		t.Fatal("expected error object in response")
+	}
+}
+
+func TestSnippetDelete_MultipleCalls(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &mockSnippetService{
+		byID: map[string]domain.Snippet{
+			"id1": {ID: "id1"},
+			"id2": {ID: "id2"},
+		},
+	}
+	h := NewHandler(svc)
+	r := gin.New()
+	r.DELETE("/v1/snippets/:id", h.Delete)
+
+	// Delete first snippet
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/v1/snippets/id1", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("first delete: want 204, got %d", w.Code)
+	}
+
+	// Delete second snippet
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/v1/snippets/id2", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("second delete: want 204, got %d", w.Code)
+	}
+
+	// Verify both were deleted
+	if len(svc.deleted) != 2 {
+		t.Fatalf("expected 2 deletes, got %d", len(svc.deleted))
+	}
+	if svc.deleteCalls != 2 {
+		t.Fatalf("expected 2 delete calls, got %d", svc.deleteCalls)
+	}
+}
+
+func TestSnippetDelete_SpecialCharacterID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	specialID := "test-id-!@#$%^"
+	svc := &mockSnippetService{
+		byID: map[string]domain.Snippet{
+			specialID: {ID: specialID},
+		},
+	}
+	h := NewHandler(svc)
+	r := gin.New()
+	r.DELETE("/v1/snippets/:id", h.Delete)
+
+	// URL encode the special ID
+	encodedID := url.QueryEscape(specialID)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/v1/snippets/"+encodedID, nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d", w.Code)
+	}
+
+	// Verify correct ID was deleted (should be decoded)
+	if len(svc.deleted) != 1 || svc.deleted[0] != specialID {
+		t.Fatalf("expected special ID to be deleted correctly, got %v", svc.deleted)
 	}
 }

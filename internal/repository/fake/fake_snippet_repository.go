@@ -108,6 +108,15 @@ func (r *SnippetRepository) Update(_ context.Context, s domain.Snippet) error {
 	return nil
 }
 
+// Delete removes a snippet by ID.
+func (r *SnippetRepository) Delete(_ context.Context, id string) error {
+	if _, ok := r.byID[id]; !ok {
+		return repository.ErrNotFound
+	}
+	delete(r.byID, id)
+	return nil
+}
+
 // DeleteByID removes a snippet by ID (for testing purposes).
 func (r *SnippetRepository) DeleteByID(id string) {
 	delete(r.byID, id)

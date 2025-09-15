@@ -53,6 +53,86 @@ clean: ## Clean up built artifacts, test resources, and stop services
 	@$(MAKE) test-cleanup
 	@$(MAKE) services-stop
 
+##@ Database Migrations (Legacy golang-migrate)
+.PHONY: migrate-up migrate-down migrate-reset migrate-version migrate-force
+migrate-up: ## Run database migrations up (legacy)
+	@echo "$(COLOR_BLUE)Running database migrations...$(COLOR_RESET)"
+	$(GO) run ./cmd/migrate/main.go -database-url "$(DATABASE_URL)" -path ./migrations up
+
+migrate-down: ## Rollback all database migrations (legacy)
+	@echo "$(COLOR_YELLOW)Rolling back database migrations...$(COLOR_RESET)"
+	$(GO) run ./cmd/migrate/main.go -database-url "$(DATABASE_URL)" -path ./migrations down
+
+migrate-reset: ## Reset database (down + up) (legacy)
+	@echo "$(COLOR_YELLOW)Resetting database...$(COLOR_RESET)"
+	@$(MAKE) migrate-down
+	@$(MAKE) migrate-up
+
+migrate-version: ## Show current migration version (legacy)
+	$(GO) run ./cmd/migrate/main.go -database-url "$(DATABASE_URL)" -path ./migrations version
+
+migrate-force: ## Force migration version (usage: make migrate-force VERSION=1) (legacy)
+	@if [ -z "$(VERSION)" ]; then echo "$(COLOR_YELLOW)Usage: make migrate-force VERSION=<version>$(COLOR_RESET)"; exit 1; fi
+	$(GO) run ./cmd/migrate/main.go -database-url "$(DATABASE_URL)" -path ./migrations force $(VERSION)
+
+##@ Atlas Schema Migrations
+.PHONY: atlas-install atlas-diff atlas-apply atlas-status atlas-lint atlas-validate atlas-dry-run atlas-baseline
+# Check if ATLAS_ENV is set, default to local
+ATLAS_ENV ?= local
+
+atlas-install: ## Install Atlas CLI
+	@echo "$(COLOR_BLUE)Installing Atlas CLI...$(COLOR_RESET)"
+	@command -v atlas >/dev/null 2>&1 || { \
+		echo "$(COLOR_YELLOW)Atlas not found, installing...$(COLOR_RESET)"; \
+		curl -sSf https://atlasgo.sh | sh; \
+	}
+	@echo "$(COLOR_GREEN)Atlas CLI installed successfully!$(COLOR_RESET)"
+
+atlas-diff: atlas-install ## Generate new migration from schema changes
+	@echo "$(COLOR_BLUE)Generating Atlas migration diff...$(COLOR_RESET)"
+	@if [ -z "$(NAME)" ]; then echo "$(COLOR_YELLOW)Usage: make atlas-diff NAME=<migration_name>$(COLOR_RESET)"; exit 1; fi
+	atlas migrate diff $(NAME) --env $(ATLAS_ENV)
+	@echo "$(COLOR_GREEN)Migration diff generated!$(COLOR_RESET)"
+
+atlas-apply: atlas-install ## Apply pending migrations to database
+	@echo "$(COLOR_BLUE)Applying Atlas migrations...$(COLOR_RESET)"
+	atlas migrate apply --env $(ATLAS_ENV)
+	@echo "$(COLOR_GREEN)Migrations applied successfully!$(COLOR_RESET)"
+
+atlas-status: atlas-install ## Show migration status
+	@echo "$(COLOR_BLUE)Checking Atlas migration status...$(COLOR_RESET)"
+	atlas migrate status --env $(ATLAS_ENV)
+
+atlas-lint: atlas-install ## Lint migration files
+	@echo "$(COLOR_BLUE)Linting Atlas migrations...$(COLOR_RESET)"
+	atlas migrate lint --env $(ATLAS_ENV) --latest 1
+
+atlas-validate: atlas-install ## Validate schema definition
+	@echo "$(COLOR_BLUE)Validating Atlas schema...$(COLOR_RESET)"
+	atlas schema validate --env $(ATLAS_ENV)
+
+atlas-dry-run: atlas-install ## Show migration plan without applying (dry run)
+	@echo "$(COLOR_BLUE)Atlas migration dry run...$(COLOR_RESET)"
+	atlas migrate apply --env $(ATLAS_ENV) --dry-run
+
+atlas-baseline: atlas-install ## Mark current database state as baseline
+	@echo "$(COLOR_BLUE)Setting Atlas baseline...$(COLOR_RESET)"
+	atlas migrate set --env $(ATLAS_ENV) 20250915100000
+
+atlas-drift: atlas-install ## Detect schema drift between desired and live database
+	@echo "$(COLOR_BLUE)Checking for schema drift...$(COLOR_RESET)"
+	@atlas schema diff --env $(ATLAS_ENV) --from "$(DATABASE_URL)" --to file://schema && \
+		echo "$(COLOR_GREEN)No drift detected$(COLOR_RESET)" || \
+		{ echo "$(COLOR_YELLOW)Schema drift detected! Run 'make atlas-diff' to generate migrations$(COLOR_RESET)"; exit 1; }
+
+atlas-inspect: atlas-install ## Inspect current database schema
+	@echo "$(COLOR_BLUE)Inspecting database schema...$(COLOR_RESET)"
+	atlas schema inspect --env $(ATLAS_ENV)
+
+atlas-k8s-config: ## Generate Kubernetes ConfigMap with Atlas configuration
+	@echo "$(COLOR_BLUE)Generating Kubernetes ConfigMap...$(COLOR_RESET)"
+	./scripts/generate-k8s-configmap.sh
+
 ##@ Services
 .PHONY: services services-stop services-restart logs
 services: ## Start database services (PostgreSQL + Redis)
