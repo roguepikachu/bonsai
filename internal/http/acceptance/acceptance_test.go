@@ -184,7 +184,7 @@ func startTestServer() error {
 
 	// Setup repositories
 	pgRepo := postgresRepo.NewSnippetRepository(pool)
-	if err := pgRepo.EnsureSchema(context.Background()); err != nil {
+	if err := createTestSchema(context.Background(), pool); err != nil {
 		return fmt.Errorf("ensure schema: %w", err)
 	}
 
@@ -2608,4 +2608,35 @@ func Test_DeleteWithSpecialCharacterID(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		t.Errorf("Expected 204 for delete with special ID, got %d", resp.StatusCode)
 	}
+}
+
+// createTestSchema creates the snippets table and indices for integration tests.
+// For isolated test containers, we can create schema directly rather than using migrations.
+func createTestSchema(ctx context.Context, pool *pgxpool.Pool) error {
+	const createTable = `
+CREATE TABLE IF NOT EXISTS snippets (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NULL
+);`
+
+	if _, err := pool.Exec(ctx, createTable); err != nil {
+		return fmt.Errorf("create table: %w", err)
+	}
+
+	indices := []string{
+		`CREATE INDEX IF NOT EXISTS idx_snippets_created_at ON snippets (created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_snippets_expires_at ON snippets (expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_snippets_tags_gin ON snippets USING GIN (tags)`,
+	}
+
+	for _, index := range indices {
+		if _, err := pool.Exec(ctx, index); err != nil {
+			return fmt.Errorf("create index: %w", err)
+		}
+	}
+
+	return nil
 }

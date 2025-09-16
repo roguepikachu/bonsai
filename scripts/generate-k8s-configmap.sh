@@ -48,14 +48,14 @@ done)
 $(sed 's/^/    /' atlas-migrations/atlas.sum)
 EOF
 
-echo "✅ ConfigMap generated at k8s/atlas-configmap.yaml"
+echo "ConfigMap generated at k8s/atlas-configmap.yaml"
 
 # Validate YAML syntax
 if command -v yq >/dev/null 2>&1; then
     yq eval . k8s/atlas-configmap.yaml > /dev/null
-    echo "✅ YAML syntax validation passed"
+    echo "YAML syntax validation passed"
 else
-    echo "⚠️  Install yq for YAML validation: brew install yq"
+    echo "Install yq for YAML validation: brew install yq"
 fi
 
 echo "🚀 Apply with: kubectl apply -f k8s/atlas-configmap.yaml"

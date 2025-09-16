@@ -72,7 +72,15 @@ spec:
           value: "production"
         volumeMounts:
         - name: atlas-config
-          mountPath: /etc/atlas
+          mountPath: /etc/atlas/atlas.hcl
+          subPath: atlas.hcl
+          readOnly: true
+        - name: atlas-schema
+          mountPath: /etc/atlas/schema/snippets.hcl
+          subPath: snippets.hcl
+          readOnly: true
+        - name: atlas-migrations
+          mountPath: /etc/atlas/atlas-migrations/
           readOnly: true
         resources:
           requests:
@@ -94,6 +102,12 @@ spec:
       - name: atlas-config
         configMap:
           name: bonsai-atlas-config
+      - name: atlas-schema
+        configMap:
+          name: bonsai-atlas-config
+      - name: atlas-migrations
+        configMap:
+          name: bonsai-atlas-config
       # Node selection for database access
       nodeSelector:
         kubernetes.io/os: linux
@@ -104,50 +118,6 @@ spec:
         value: "true"
         effect: "NoSchedule"
 
----
-# ConfigMap containing Atlas configuration and schema
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: bonsai-atlas-config
-  namespace: default
-  labels:
-    app: bonsai
-    component: migration
-data:
-  atlas.hcl: |
-    # Atlas production configuration
-    env "production" {
-      src = "file://schema"
-      url = env("DATABASE_URL")
-      migration {
-        dir = "file://atlas-migrations"
-      }
-      diff {
-        concurrent_index {
-          create = true
-          drop = true
-        }
-      }
-      # Strict production lint checks
-      lint {
-        destructive {
-          error = true
-        }
-        data_depend {
-          error = true
-        }
-        naming {
-          error = true
-        }
-      }
-    }
-
-    format {
-      migrate {
-        diff = "{{ sql . \"  \" }}"
-      }
-    }
 
 ---
 # ServiceAccount for migration job

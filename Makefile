@@ -29,118 +29,38 @@ setup: ## First time setup - install deps and start services
 
 run: services ## Start the API server (with database services)
 	@echo "$(COLOR_BLUE)Starting Bonsai API server...$(COLOR_RESET)"
-	$(GO) run ./cmd/api/main.go
+	POSTGRES_URL="postgres://postgres:postgres@localhost:5432/bonsai?sslmode=disable" \
+	 REDIS_URL="redis://localhost:6379" \
+	 $(GO) run ./cmd/api/main.go
 
-##@ Development
-.PHONY: dev build clean install
-dev: ## Run in development mode (live reload)
-	@echo "$(COLOR_BLUE)Running in development mode...$(COLOR_RESET)"
-	$(MAKE) services
-	$(GO) run ./cmd/api/main.go
-
-build: ## Build the binary
-	@echo "$(COLOR_BLUE)Building $(BINARY)...$(COLOR_RESET)"
-	$(GO) build -o $(BINARY) ./cmd/api/main.go
-
-install: build ## Install binary to $GOPATH/bin
-	$(GO) install ./cmd/api
-
-clean: ## Clean up built artifacts, test resources, and stop services
-	@echo "$(COLOR_YELLOW)Cleaning up...$(COLOR_RESET)"
-	rm -f $(BINARY)
-	rm -f coverage*.out coverage*.html
-	$(GO) clean
-	@$(MAKE) test-cleanup
-	@$(MAKE) services-stop
-
-##@ Database Migrations (Legacy golang-migrate)
-.PHONY: migrate-up migrate-down migrate-reset migrate-version migrate-force
-migrate-up: ## Run database migrations up (legacy)
-	@echo "$(COLOR_BLUE)Running database migrations...$(COLOR_RESET)"
-	$(GO) run ./cmd/migrate/main.go -database-url "$(DATABASE_URL)" -path ./migrations up
-
-migrate-down: ## Rollback all database migrations (legacy)
-	@echo "$(COLOR_YELLOW)Rolling back database migrations...$(COLOR_RESET)"
-	$(GO) run ./cmd/migrate/main.go -database-url "$(DATABASE_URL)" -path ./migrations down
-
-migrate-reset: ## Reset database (down + up) (legacy)
-	@echo "$(COLOR_YELLOW)Resetting database...$(COLOR_RESET)"
-	@$(MAKE) migrate-down
-	@$(MAKE) migrate-up
-
-migrate-version: ## Show current migration version (legacy)
-	$(GO) run ./cmd/migrate/main.go -database-url "$(DATABASE_URL)" -path ./migrations version
-
-migrate-force: ## Force migration version (usage: make migrate-force VERSION=1) (legacy)
-	@if [ -z "$(VERSION)" ]; then echo "$(COLOR_YELLOW)Usage: make migrate-force VERSION=<version>$(COLOR_RESET)"; exit 1; fi
-	$(GO) run ./cmd/migrate/main.go -database-url "$(DATABASE_URL)" -path ./migrations force $(VERSION)
-
-##@ Atlas Schema Migrations
-.PHONY: atlas-install atlas-diff atlas-apply atlas-status atlas-lint atlas-validate atlas-dry-run atlas-baseline
-# Check if ATLAS_ENV is set, default to local
-ATLAS_ENV ?= local
-
-atlas-install: ## Install Atlas CLI
-	@echo "$(COLOR_BLUE)Installing Atlas CLI...$(COLOR_RESET)"
-	@command -v atlas >/dev/null 2>&1 || { \
-		echo "$(COLOR_YELLOW)Atlas not found, installing...$(COLOR_RESET)"; \
-		curl -sSf https://atlasgo.sh | sh; \
-	}
-	@echo "$(COLOR_GREEN)Atlas CLI installed successfully!$(COLOR_RESET)"
-
-atlas-diff: atlas-install ## Generate new migration from schema changes
-	@echo "$(COLOR_BLUE)Generating Atlas migration diff...$(COLOR_RESET)"
-	@if [ -z "$(NAME)" ]; then echo "$(COLOR_YELLOW)Usage: make atlas-diff NAME=<migration_name>$(COLOR_RESET)"; exit 1; fi
-	atlas migrate diff $(NAME) --env $(ATLAS_ENV)
-	@echo "$(COLOR_GREEN)Migration diff generated!$(COLOR_RESET)"
-
-atlas-apply: atlas-install ## Apply pending migrations to database
-	@echo "$(COLOR_BLUE)Applying Atlas migrations...$(COLOR_RESET)"
-	atlas migrate apply --env $(ATLAS_ENV)
-	@echo "$(COLOR_GREEN)Migrations applied successfully!$(COLOR_RESET)"
-
-atlas-status: atlas-install ## Show migration status
-	@echo "$(COLOR_BLUE)Checking Atlas migration status...$(COLOR_RESET)"
-	atlas migrate status --env $(ATLAS_ENV)
-
-atlas-lint: atlas-install ## Lint migration files
-	@echo "$(COLOR_BLUE)Linting Atlas migrations...$(COLOR_RESET)"
-	atlas migrate lint --env $(ATLAS_ENV) --latest 1
-
-atlas-validate: atlas-install ## Validate schema definition
-	@echo "$(COLOR_BLUE)Validating Atlas schema...$(COLOR_RESET)"
-	atlas schema validate --env $(ATLAS_ENV)
-
-atlas-dry-run: atlas-install ## Show migration plan without applying (dry run)
-	@echo "$(COLOR_BLUE)Atlas migration dry run...$(COLOR_RESET)"
-	atlas migrate apply --env $(ATLAS_ENV) --dry-run
-
-atlas-baseline: atlas-install ## Mark current database state as baseline
-	@echo "$(COLOR_BLUE)Setting Atlas baseline...$(COLOR_RESET)"
-	atlas migrate set --env $(ATLAS_ENV) 20250915100000
-
-atlas-drift: atlas-install ## Detect schema drift between desired and live database
-	@echo "$(COLOR_BLUE)Checking for schema drift...$(COLOR_RESET)"
-	@atlas schema diff --env $(ATLAS_ENV) --from "$(DATABASE_URL)" --to file://schema && \
-		echo "$(COLOR_GREEN)No drift detected$(COLOR_RESET)" || \
-		{ echo "$(COLOR_YELLOW)Schema drift detected! Run 'make atlas-diff' to generate migrations$(COLOR_RESET)"; exit 1; }
-
-atlas-inspect: atlas-install ## Inspect current database schema
-	@echo "$(COLOR_BLUE)Inspecting database schema...$(COLOR_RESET)"
-	atlas schema inspect --env $(ATLAS_ENV)
-
-atlas-k8s-config: ## Generate Kubernetes ConfigMap with Atlas configuration
-	@echo "$(COLOR_BLUE)Generating Kubernetes ConfigMap...$(COLOR_RESET)"
-	./scripts/generate-k8s-configmap.sh
+dev: ## Start the development environment (services + migrations + API server)
+	@echo "$(COLOR_GREEN)Starting Bonsai development environment...$(COLOR_RESET)"
+	@$(MAKE) services
+	@echo "$(COLOR_YELLOW)Waiting for database to be ready...$(COLOR_RESET)"
+	@for i in $$(seq 1 30); do \
+		if docker exec postgres pg_isready -U postgres >/dev/null 2>&1; then \
+			echo "$(COLOR_GREEN)Database is ready!$(COLOR_RESET)"; \
+			break; \
+		fi; \
+		echo "$(COLOR_YELLOW)Database not ready, waiting ($$i/30)...$(COLOR_RESET)"; \
+		sleep 2; \
+		if [ $$i -eq 30 ]; then \
+			echo "$(COLOR_RED)Database failed to become ready$(COLOR_RESET)"; \
+			exit 1; \
+		fi; \
+	done
+	@DATABASE_URL="postgres://postgres:postgres@localhost:5432/bonsai?sslmode=disable" $(MAKE) migrate-apply
+	@echo "$(COLOR_BLUE)Starting API server...$(COLOR_RESET)"
+	@POSTGRES_URL="postgres://postgres:postgres@localhost:5432/bonsai?sslmode=disable" \
+	 REDIS_URL="redis://localhost:6379" \
+	 $(GO) run ./cmd/api/main.go
 
 ##@ Services
-.PHONY: services services-stop services-restart logs
+.PHONY: services services-stop logs
 services: ## Start database services (PostgreSQL + Redis)
 ifdef CI
 	@echo "$(COLOR_YELLOW)Running in CI environment - skipping local service startup$(COLOR_RESET)"
 	@echo "$(COLOR_BLUE)GitHub Actions provides services on dynamic ports$(COLOR_RESET)"
-	@# In CI, services are already provided by GitHub Actions
-	@# Just verify they're available
 	@if [ -n "$(DATABASE_URL)" ]; then \
 		echo "$(COLOR_GREEN)Database URL: $(DATABASE_URL)$(COLOR_RESET)"; \
 	fi
@@ -160,20 +80,38 @@ else
 	$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) down
 endif
 
-services-restart: services-stop services ## Restart all services
-
 logs: ## Show service logs
 	$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE) logs -f
 
+##@ Database Migrations
+.PHONY: migrate-install migrate-apply migrate-status
+ATLAS_ENV ?= local
+
+migrate-install: ## Install Atlas CLI
+	@echo "$(COLOR_BLUE)Installing Atlas CLI...$(COLOR_RESET)"
+	@command -v atlas >/dev/null 2>&1 || { \
+		echo "$(COLOR_YELLOW)Atlas not found, installing...$(COLOR_RESET)"; \
+		curl -sSf https://atlasgo.sh | sh; \
+	}
+	@echo "$(COLOR_GREEN)Atlas CLI installed successfully!$(COLOR_RESET)"
+
+migrate-apply: migrate-install ## Apply pending migrations to database
+	@echo "$(COLOR_BLUE)Applying migrations...$(COLOR_RESET)"
+	atlas migrate apply --env $(ATLAS_ENV) --allow-dirty
+	@echo "$(COLOR_GREEN)Migrations applied successfully!$(COLOR_RESET)"
+
+migrate-status: migrate-install ## Show migration status
+	@echo "$(COLOR_BLUE)Checking migration status...$(COLOR_RESET)"
+	atlas migrate status --env $(ATLAS_ENV)
+
 ##@ Testing
-.PHONY: test test-all test-unit test-integration test-acceptance test-cleanup coverage
+.PHONY: test test-all test-unit test-integration test-cleanup
 test: test-unit ## Run tests (default: unit tests)
 
-test-all: ## Run all tests (unit + integration + acceptance) with cleanup
+test-all: ## Run all tests (unit + integration) with cleanup
 	@echo "$(COLOR_BLUE)Running all tests...$(COLOR_RESET)"
 	@$(MAKE) test-unit
 	@$(MAKE) test-integration
-	@$(MAKE) test-acceptance
 	@echo "$(COLOR_GREEN)All tests completed successfully!$(COLOR_RESET)"
 
 test-unit: ## Run unit tests (fast, no external services)
@@ -183,79 +121,95 @@ test-unit: ## Run unit tests (fast, no external services)
 test-integration: ## Run integration tests (requires services)
 	@echo "$(COLOR_BLUE)Running integration tests...$(COLOR_RESET)"
 ifndef CI
-	@# Local environment - start services
 	@$(MAKE) services
 endif
 	@trap '$(MAKE) test-cleanup' EXIT; \
 		$(GO) test -tags=integration -race -coverprofile=coverage-integration.out -covermode=atomic $(PKG) && \
 		echo "$(COLOR_GREEN)Integration tests completed!$(COLOR_RESET)"
 
-test-acceptance: ## Run full acceptance tests (auto-manages services)
-	@echo "$(COLOR_BLUE)Running acceptance tests...$(COLOR_RESET)"
-ifndef CI
-	@# Local environment - start services
-	@$(MAKE) services
-endif
-	@trap '$(MAKE) test-cleanup' EXIT; \
-		$(GO) test -tags=acceptance -race -v ./internal/http/acceptance && \
-		echo "$(COLOR_GREEN)Acceptance tests completed!$(COLOR_RESET)"
-
-test-cleanup: ## Clean up test resources (test data and artifacts only)
+test-cleanup: ## Clean up test resources
 	@echo "$(COLOR_YELLOW)Cleaning up test resources...$(COLOR_RESET)"
 ifndef CI
-	@# Local environment - clean up using docker
 	@docker exec postgres psql -U postgres -d bonsai_test -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
 	@docker exec redis redis-cli FLUSHALL 2>/dev/null || true
 endif
-	@# Always clean up test artifacts
 	@rm -f coverage*.out coverage*.html 2>/dev/null || true
 	@echo "$(COLOR_GREEN)Test cleanup completed!$(COLOR_RESET)"
 
-coverage: ## Generate test coverage report
-	@echo "$(COLOR_BLUE)Generating coverage report...$(COLOR_RESET)"
-	$(GO) test -race -coverprofile=coverage.out -covermode=atomic -short $(PKG)
-	$(GO) tool cover -html=coverage.out -o coverage.html
-	@echo "$(COLOR_GREEN)Coverage report: coverage.html$(COLOR_RESET)"
+##@ Build & Clean
+.PHONY: build clean
+build: ## Build the binary
+	@echo "$(COLOR_BLUE)Building $(BINARY)...$(COLOR_RESET)"
+	$(GO) build -o $(BINARY) ./cmd/api/main.go
 
-##@ Code Quality
-.PHONY: lint format check
-format: ## Format code
-	@echo "$(COLOR_BLUE)Formatting code...$(COLOR_RESET)"
-	$(GO) fmt $(PKG)
+clean: ## Clean up built artifacts, test resources, and stop services
+	@echo "$(COLOR_YELLOW)Cleaning up...$(COLOR_RESET)"
+	rm -f $(BINARY)
+	rm -f coverage*.out coverage*.html
+	$(GO) clean
+	@$(MAKE) test-cleanup
+	@$(MAKE) services-stop
 
-lint: format ## Run linter
-	@echo "$(COLOR_BLUE)Running linter...$(COLOR_RESET)"
-	@command -v golangci-lint >/dev/null || (echo "$(COLOR_YELLOW)Installing golangci-lint...$(COLOR_RESET)" && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
-	golangci-lint run
+##@ API Testing & Deployment
+.PHONY: sanity-check setup-and-test health
+sanity-check: ## Run comprehensive API sanity tests (requires running API server)
+	@echo "$(COLOR_BLUE)Running API sanity check...$(COLOR_RESET)"
+	@./scripts/api-sanity-check.sh
 
-check: lint test ## Full code check (lint + test)
-	@echo "$(COLOR_GREEN)All checks passed!$(COLOR_RESET)"
+test-api: ## Run sanity tests against local API on port 8080
+	@echo "$(COLOR_BLUE)Testing API on http://localhost:8080...$(COLOR_RESET)"
+	@API_BASE_URL="http://localhost:8080" ./scripts/api-sanity-check.sh
 
-##@ Docker
-.PHONY: docker docker-run
-docker: ## Build Docker image
-	@echo "$(COLOR_BLUE)Building Docker image...$(COLOR_RESET)"
-	docker build -t $(BINARY):latest .
+test-simple: ## Run simple API tests (basic functionality)
+	@echo "$(COLOR_BLUE)Running simple API tests...$(COLOR_RESET)"
+	@./scripts/simple-api-test.sh
 
-docker-run: docker services ## Run in Docker with services
-	docker run --rm --network host -e DATABASE_URL=postgres://postgres:postgres@localhost:5432/bonsai \
-		-e REDIS_URL=redis://localhost:6379 $(BINARY):latest
+setup-and-test: ## Complete setup, migration, start server, and run sanity tests
+	@echo "$(COLOR_GREEN)Complete Bonsai setup and test...$(COLOR_RESET)"
+	@echo "$(COLOR_BLUE)1. Setting up services...$(COLOR_RESET)"
+	@$(MAKE) setup
+	@echo "$(COLOR_BLUE)2. Waiting for database and applying migrations...$(COLOR_RESET)"
+	@echo "$(COLOR_YELLOW)Waiting for database to be ready...$(COLOR_RESET)"
+	@for i in $$(seq 1 30); do \
+		if docker exec postgres pg_isready -U postgres >/dev/null 2>&1; then \
+			echo "$(COLOR_GREEN)Database is ready!$(COLOR_RESET)"; \
+			break; \
+		fi; \
+		echo "$(COLOR_YELLOW)Database not ready, waiting ($$i/30)...$(COLOR_RESET)"; \
+		sleep 2; \
+		if [ $$i -eq 30 ]; then \
+			echo "$(COLOR_RED)Database failed to become ready after 60 seconds$(COLOR_RESET)"; \
+			exit 1; \
+		fi; \
+	done
+	@DATABASE_URL="postgres://postgres:postgres@localhost:5432/bonsai_test?sslmode=disable" $(MAKE) migrate-apply
+	@echo "$(COLOR_BLUE)3. Starting API server in background...$(COLOR_RESET)"
+	@echo "$(COLOR_YELLOW)Cleaning up any existing API processes...$(COLOR_RESET)"
+	@pkill -f "go run ./cmd/api/main.go" || true
+	@sleep 2
+	@POSTGRES_URL="postgres://postgres:postgres@localhost:5432/bonsai_test?sslmode=disable" \
+	 REDIS_URL="redis://localhost:6379" \
+	 BONSAI_PORT=8085 \
+	 $(GO) run ./cmd/api/main.go & echo $$! > .api.pid
+	@echo "$(COLOR_BLUE)4. Running sanity checks...$(COLOR_RESET)"
+	@API_BASE_URL="http://localhost:8085" ./scripts/api-sanity-check.sh || { \
+		echo "$(COLOR_YELLOW)Stopping API server...$(COLOR_RESET)"; \
+		[ -f .api.pid ] && kill $$(cat .api.pid) 2>/dev/null || true; \
+		rm -f .api.pid; \
+		exit 1; \
+	}
+	@echo "$(COLOR_YELLOW)Stopping API server...$(COLOR_RESET)"
+	@[ -f .api.pid ] && kill $$(cat .api.pid) 2>/dev/null || true
+	@rm -f .api.pid
+	@echo "$(COLOR_GREEN)Setup and test completed successfully!$(COLOR_RESET)"
 
-##@ Utilities
-.PHONY: health deps-update
 health: ## Check API health endpoints
 	@echo "$(COLOR_BLUE)Checking health endpoints...$(COLOR_RESET)"
-	@curl -s http://localhost:8080/v1/health | jq . 2>/dev/null || echo "API not running or jq not installed"
-	@curl -s http://localhost:8080/v1/livez | jq . 2>/dev/null || true
+	@curl -s http://localhost:8080/v1/livez | jq . 2>/dev/null || echo "API not running or jq not installed"
 	@curl -s http://localhost:8080/v1/readyz | jq . 2>/dev/null || true
 
-deps-update: ## Update Go dependencies
-	@echo "$(COLOR_BLUE)Updating dependencies...$(COLOR_RESET)"
-	$(GO) get -u ./...
-	$(GO) mod tidy
-
 ##@ Help
-.PHONY: help commands
+.PHONY: help
 help: ## Show this help message
 	@echo "$(COLOR_GREEN)"
 	@echo "  ____                        _ "
@@ -269,9 +223,8 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make $(COLOR_BLUE)<command>$(COLOR_RESET)\n\nCommands:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(COLOR_BLUE)%-15s$(COLOR_RESET) %s\n", $$1, $$2 } /^##@/ { printf "\n$(COLOR_YELLOW)%s$(COLOR_RESET)\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 	@echo ""
 	@echo "$(COLOR_GREEN)Quick Start:$(COLOR_RESET)"
-	@echo "  1. $(COLOR_BLUE)make setup$(COLOR_RESET)    # First time setup"
-	@echo "  2. $(COLOR_BLUE)make run$(COLOR_RESET)      # Start the API"
-	@echo "  3. $(COLOR_BLUE)make test$(COLOR_RESET)     # Run tests"
+	@echo "  1. $(COLOR_BLUE)make setup$(COLOR_RESET)      # First time setup"
+	@echo "  2. $(COLOR_BLUE)make run$(COLOR_RESET)        # Start the API"
+	@echo "  3. $(COLOR_BLUE)make test$(COLOR_RESET)       # Run tests"
+	@echo "  4. $(COLOR_BLUE)make clean$(COLOR_RESET)      # Stop and clean up"
 	@echo ""
-
-commands: help ## Alias for help

@@ -77,7 +77,7 @@ func TestService_IntegrationPostgres(t *testing.T) {
 
 	// Setup repository and service
 	repo := postgresRepo.NewSnippetRepository(pool)
-	if err := repo.EnsureSchema(ctx); err != nil {
+	if err := createTestSchema(ctx, pool); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 
@@ -297,7 +297,7 @@ func TestService_IntegrationRedisCache(t *testing.T) {
 
 	// Setup repository and service with caching
 	pgRepo := postgresRepo.NewSnippetRepository(pool)
-	if err := pgRepo.EnsureSchema(ctx); err != nil {
+	if err := createTestSchema(ctx, pool); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 
@@ -485,7 +485,7 @@ func TestService_IntegrationConcurrentAccess(t *testing.T) {
 
 	// Setup repository and service
 	repo := postgresRepo.NewSnippetRepository(pool)
-	if err := repo.EnsureSchema(ctx); err != nil {
+	if err := createTestSchema(ctx, pool); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 
@@ -662,7 +662,7 @@ func TestService_DatabaseConnectionHandling(t *testing.T) {
 
 	// Setup repository and service
 	repo := postgresRepo.NewSnippetRepository(pool)
-	if err := repo.EnsureSchema(ctx); err != nil {
+	if err := createTestSchema(ctx, pool); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 
@@ -726,6 +726,37 @@ func (f *fixedClock) Now() time.Time {
 	return f.now
 }
 
+// createTestSchema creates the snippets table and indices for integration tests.
+// For isolated test containers, we can create schema directly rather than using migrations.
+func createTestSchema(ctx context.Context, pool *pgxpool.Pool) error {
+	const createTable = `
+CREATE TABLE IF NOT EXISTS snippets (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NULL
+);`
+
+	if _, err := pool.Exec(ctx, createTable); err != nil {
+		return fmt.Errorf("create table: %w", err)
+	}
+
+	indices := []string{
+		`CREATE INDEX IF NOT EXISTS idx_snippets_created_at ON snippets (created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_snippets_expires_at ON snippets (expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_snippets_tags_gin ON snippets USING GIN (tags)`,
+	}
+
+	for _, index := range indices {
+		if _, err := pool.Exec(ctx, index); err != nil {
+			return fmt.Errorf("create index: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // TestService_ErrorHandling tests various error conditions with real databases
 func TestService_ErrorHandling(t *testing.T) {
 	// Don't run in parallel when using shared database in CI
@@ -784,7 +815,7 @@ func TestService_ErrorHandling(t *testing.T) {
 
 	// Setup repository and service
 	repo := postgresRepo.NewSnippetRepository(pool)
-	if err := repo.EnsureSchema(ctx); err != nil {
+	if err := createTestSchema(ctx, pool); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 
@@ -906,7 +937,7 @@ func TestService_CachePerformance(t *testing.T) {
 
 	// Setup repositories
 	pgRepo := postgresRepo.NewSnippetRepository(pool)
-	if err := pgRepo.EnsureSchema(ctx); err != nil {
+	if err := createTestSchema(ctx, pool); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 
@@ -1049,7 +1080,7 @@ func TestService_DataConsistency(t *testing.T) {
 
 	// Setup repositories
 	pgRepo := postgresRepo.NewSnippetRepository(pool)
-	if err := pgRepo.EnsureSchema(ctx); err != nil {
+	if err := createTestSchema(ctx, pool); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 
@@ -1261,7 +1292,7 @@ func TestService_UpdateEdgeCases(t *testing.T) {
 
 	// Setup repository and service
 	repo := postgresRepo.NewSnippetRepository(pool)
-	if err := repo.EnsureSchema(ctx); err != nil {
+	if err := createTestSchema(ctx, pool); err != nil {
 		t.Fatalf("Failed to ensure schema: %v", err)
 	}
 

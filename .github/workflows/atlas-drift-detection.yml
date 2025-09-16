@@ -63,14 +63,14 @@ jobs:
       run: |
         echo "DATABASE_URL=postgres://postgres:postgres@localhost:5432/bonsai_ci?sslmode=disable" >> $GITHUB_ENV
 
-    - name: Validate Atlas configuration
+    - name: Validate Migrate configuration
       run: |
-        echo "🔍 Validating Atlas configuration..."
+        echo "🔍 Validating Migrate configuration..."
         atlas schema validate --env dev
 
     - name: Lint migration files
       run: |
-        echo "🔍 Linting Atlas migrations..."
+        echo "🔍 Linting migrations..."
         atlas migrate lint --env dev --latest 5
 
     - name: Check for destructive changes
@@ -78,7 +78,7 @@ jobs:
         echo "⚠️  Checking for destructive changes..."
         # This will fail the build if destructive changes are detected
         atlas migrate lint \
-          --env staging \
+          --env dev \
           --latest 1 \
           --format '{{ range .Files }}{{ .Name }}: {{ range .Reports }}{{ .Text }}{{ end }}{{ end }}'
 
@@ -123,7 +123,7 @@ jobs:
       if: steps.drift_check.outputs.drift_detected == 'true' && github.event_name == 'schedule'
       run: |
         echo "❌ Schema drift detected in scheduled run - failing build"
-        echo "Please run 'make atlas-diff NAME=fix_drift' to generate corrective migration"
+        echo "Please run 'make migrate-diff NAME=fix_drift' to generate corrective migration"
         exit 1
 
     - name: Comment on PR with drift results
@@ -147,7 +147,7 @@ jobs:
           \`\`\`
 
           **Action Required:**
-          Run \`make atlas-diff NAME=fix_drift\` to generate a migration that addresses this drift.`
+          Run \`make migrate-diff NAME=fix_drift\` to generate a migration that addresses this drift.`
           });
 
     - name: Test migration rollback capability
@@ -157,7 +157,7 @@ jobs:
         # Apply migrations
         atlas migrate apply --env dev
 
-        # TODO: Add rollback test when Atlas supports it
+        # TODO: Add rollback test when Migrate supports it
         echo "✅ Migration rollback test completed"
 
     - name: Upload drift report
@@ -181,6 +181,7 @@ jobs:
       run: |
         curl -sSf https://atlasgo.sh | sh
         sudo mv atlas /usr/local/bin/atlas
+        atlas version
 
     - name: Check for concurrent index operations
       run: |

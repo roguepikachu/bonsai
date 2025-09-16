@@ -204,28 +204,47 @@ jobs:
     - name: Download dependencies
       run: go mod download
 
-    - name: Run acceptance tests
-      run: make test-acceptance
+    - name: Install Atlas CLI
+      run: |
+        curl -sSf https://atlasgo.sh | sh
+        echo "${HOME}/.atlas/bin" >> $GITHUB_PATH
+
+    - name: Apply database migrations
+      run: |
+        DATABASE_URL="postgres://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/bonsai?sslmode=disable" \
+        atlas migrate apply --env local --allow-dirty
+
+    - name: Start API server in background
+      run: |
+        POSTGRES_URL="postgres://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/bonsai?sslmode=disable" \
+        REDIS_URL="redis://localhost:${{ job.services.redis.ports[6379] }}" \
+        BONSAI_PORT=8080 \
+        go run ./cmd/api/main.go &
+        echo $! > .api.pid
+        sleep 5
+
+    - name: Run API sanity checks
+      run: |
+        API_BASE_URL="http://localhost:8080" ./scripts/api-sanity-check.sh
       env:
         CI: true
-        DATABASE_URL: postgres://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/bonsai?sslmode=disable
-        REDIS_URL: redis://localhost:${{ job.services.redis.ports[6379] }}
-        REDIS_PORT: ${{ job.services.redis.ports[6379] }}
-        BONSAI_PORT: 8080
 
     - name: Cleanup test resources
       if: always()
       run: |
+        # Stop API server
+        [ -f .api.pid ] && kill $(cat .api.pid) 2>/dev/null || true
+        rm -f .api.pid
         # Clean up test databases
         PGPASSWORD=postgres psql -h localhost -p ${{ job.services.postgres.ports[5432] }} -U postgres -c "DROP DATABASE IF EXISTS bonsai_test;" || true
         PGPASSWORD=postgres psql -h localhost -p ${{ job.services.postgres.ports[5432] }} -U postgres -d bonsai -c "TRUNCATE TABLE IF EXISTS snippets CASCADE;" || true
-        # Clean up Redis cache  
+        # Clean up Redis cache
         redis-cli -h localhost -p ${{ job.services.redis.ports[6379] }} FLUSHALL || true
         # Clean up test artifacts
         rm -f coverage*.out coverage*.html
         go clean -testcache
-        # Kill any orphaned test server processes
-        pkill -f "go test" || true
+        # Kill any orphaned server processes
+        pkill -f "go run" || true
 
   coverage-report:
     runs-on: ubuntu-latest

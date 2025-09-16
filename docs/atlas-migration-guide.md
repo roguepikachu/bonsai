@@ -1,11 +1,11 @@
-# Atlas Schema Migration Guide for Bonsai
+# Database Schema Migration Guide for Bonsai
 
-This guide covers Atlas-powered PostgreSQL schema migrations with Redis cache coordination for zero-downtime deployments.
+This guide covers PostgreSQL schema migrations with Redis cache coordination for zero-downtime deployments.
 
 ## Table of Contents
 
 - [Quick Start](#quick-start)
-- [Atlas Configuration](#atlas-configuration)
+- [Migration Configuration](#migration-configuration)
 - [Expand-Contract Migration Pattern](#expand-contract-migration-pattern)
 - [Redis Cache Coordination](#redis-cache-coordination)
 - [Kubernetes Deployment](#kubernetes-deployment)
@@ -18,7 +18,7 @@ This guide covers Atlas-powered PostgreSQL schema migrations with Redis cache co
 
 ### Prerequisites
 
-- Atlas CLI installed: `make atlas-install`
+- Atlas CLI installed: `make migrate-install`
 - PostgreSQL 12+ with JSONB support
 - Redis 6+ for caching
 - Kubernetes cluster for production deployment
@@ -27,25 +27,25 @@ This guide covers Atlas-powered PostgreSQL schema migrations with Redis cache co
 
 ```bash
 # Check migration status
-make atlas-status
+make migrate-status
 
 # Generate migration from schema changes
-make atlas-diff NAME=add_user_preferences
+make migrate-diff NAME=add_user_preferences
 
 # Validate migration safety
-make atlas-lint
+make migrate-lint
 
 # Apply migrations (dry run first)
-make atlas-dry-run
-make atlas-apply
+make migrate-dry-run
+make migrate-apply
 
 # Check for schema drift
-make atlas-drift
+make migrate-drift
 ```
 
-## Atlas Configuration
+## Migration Configuration
 
-The Atlas configuration is defined in `atlas.hcl`:
+The migration configuration is defined in `atlas.hcl`:
 
 ```hcl
 env "production" {
@@ -114,7 +114,7 @@ The expand-contract pattern ensures zero-downtime schema changes by breaking cha
 
 ```bash
 # Example: Adding a new column
-make atlas-diff NAME=add_snippet_language
+make migrate-diff NAME=add_snippet_language
 ```
 
 Generated migration:
@@ -162,7 +162,7 @@ Wait for:
 
 ```bash
 # Example: Removing old column after migration period
-make atlas-diff NAME=remove_old_tags_format
+make migrate-diff NAME=remove_old_tags_format
 ```
 
 Generated migration:
@@ -187,7 +187,7 @@ type Snippet struct {
 ### Phase 3: Optimize (Cleanup and Optimize)
 
 ```bash
-make atlas-diff NAME=optimize_indexes_after_migration
+make migrate-diff NAME=optimize_indexes_after_migration
 ```
 
 ## Redis Cache Coordination
@@ -275,7 +275,7 @@ Run migrations as a separate Kubernetes Job:
 
 ```bash
 kubectl apply -f k8s/atlas-migration-job.yaml
-kubectl wait --for=condition=complete job/bonsai-atlas-migration --timeout=300s
+kubectl wait --for=condition=complete job/bonsai-migration --timeout=300s
 kubectl apply -f k8s/bonsai-deployment.yaml
 ```
 
@@ -289,7 +289,7 @@ kubectl apply -f k8s/bonsai-deployment-with-migration.yaml
 
 ### Migration Job Features
 
-- **Advisory Locking**: Atlas built-in locking prevents concurrent migrations
+- **Advisory Locking**: Built-in locking prevents concurrent migrations
 - **Dry Run**: Always runs dry-run before applying changes
 - **Security**: Runs as non-root with minimal permissions
 - **Monitoring**: Proper logging and exit codes for CI/CD integration
@@ -300,7 +300,7 @@ kubectl apply -f k8s/bonsai-deployment-with-migration.yaml
 
 The CI pipeline (`/.github/workflows/atlas-drift-detection.yml`) provides:
 
-1. **Schema Validation**: Validates Atlas configuration and schema files
+1. **Schema Validation**: Validates migration configuration and schema files
 2. **Migration Linting**: Checks for destructive or unsafe operations
 3. **Drift Detection**: Compares desired schema with live database
 4. **Safety Checks**: Ensures concurrent index operations and PgBouncer compatibility
@@ -309,7 +309,7 @@ The CI pipeline (`/.github/workflows/atlas-drift-detection.yml`) provides:
 
 ```bash
 # Manual drift check
-make atlas-drift
+make migrate-drift
 
 # In CI - fails build on drift
 atlas schema diff --env production --from "$DATABASE_URL" --to file://schema
@@ -317,7 +317,7 @@ atlas schema diff --env production --from "$DATABASE_URL" --to file://schema
 
 If drift is detected:
 1. Review the differences carefully
-2. Run `make atlas-diff NAME=fix_drift` to generate corrective migration
+2. Run `make migrate-diff NAME=fix_drift` to generate corrective migration
 3. Test migration in staging environment
 4. Apply to production during maintenance window
 
@@ -325,7 +325,7 @@ If drift is detected:
 
 ### Emergency Rollback Process
 
-Atlas doesn't support automatic rollback, so follow these procedures:
+Automatic rollback is not supported, so follow these procedures:
 
 #### 1. Application Rollback (Quick)
 
@@ -343,13 +343,13 @@ Create reverse migration manually:
 
 ```bash
 # Generate reverse migration
-make atlas-diff NAME=rollback_problematic_change
+make migrate-diff NAME=rollback_problematic_change
 
 # Review generated rollback migration
 cat atlas-migrations/$(date +%Y%m%d%H%M%S)_rollback_problematic_change.sql
 
 # Apply after testing
-make atlas-apply ATLAS_ENV=production
+make migrate-apply ATLAS_ENV=production
 ```
 
 #### 3. Data Recovery (Last Resort)
@@ -406,7 +406,7 @@ type DatabaseConfig struct {
 // Migration tool uses session-preserving connection
 func RunMigrations() error {
     db, err := sql.Open("postgres", config.MigrationURL)
-    // ... run Atlas migrations
+    // ... run migrations
 }
 ```
 
@@ -419,13 +419,13 @@ func RunMigrations() error {
 vim schema/snippets.hcl
 
 # 2. Generate migration
-make atlas-diff NAME=add_snippet_categories
+make migrate-diff NAME=add_snippet_categories
 
 # 3. Review generated migration
 cat atlas-migrations/$(ls -t atlas-migrations/*.sql | head -1)
 
 # 4. Test migration locally
-make atlas-apply ATLAS_ENV=local
+make migrate-apply ATLAS_ENV=local
 
 # 5. Run application tests
 make test-integration
@@ -442,10 +442,10 @@ git commit -m "feat: add snippet categories support"
 kubectl apply -f k8s/atlas-migration-job.yaml
 
 # 2. Wait for completion
-kubectl wait --for=condition=complete job/bonsai-atlas-migration --timeout=300s
+kubectl wait --for=condition=complete job/bonsai-migration --timeout=300s
 
 # 3. Check migration status
-kubectl logs job/bonsai-atlas-migration
+kubectl logs job/bonsai-migration
 
 # 4. Deploy application (expand-compatible version)
 kubectl set image deployment/bonsai-api bonsai-api=bonsai:v1.2.0
@@ -462,7 +462,7 @@ curl http://bonsai-api/v1/healthz
 
 ```bash
 # Check migration status
-make atlas-status
+make migrate-status
 
 # Monitor database performance impact
 kubectl exec postgres-0 -- psql -c "
@@ -489,7 +489,7 @@ kubectl exec redis-0 -- redis-cli INFO stats | grep keyspace
 
 ```bash
 # Check for long-running migrations
-kubectl logs job/bonsai-atlas-migration
+kubectl logs job/bonsai-migration
 
 # Manual unlock (emergency only)
 kubectl exec postgres-0 -- psql -c "
@@ -502,13 +502,13 @@ SELECT * FROM atlas_schema_revisions;
 
 ```bash
 # Immediate assessment
-make atlas-drift ATLAS_ENV=production
+make migrate-drift ATLAS_ENV=production
 
 # Generate corrective migration
-make atlas-diff NAME=fix_production_drift
+make migrate-diff NAME=fix_production_drift
 
 # Emergency schema inspection
-make atlas-inspect ATLAS_ENV=production
+make migrate-inspect ATLAS_ENV=production
 ```
 
 #### 3. Cache Inconsistency After Migration
@@ -531,13 +531,13 @@ kubectl exec deployment/bonsai-api -- /app/cache-warmup
 kubectl exec pgbouncer-0 -- psql -p 6432 pgbouncer -c "SHOW POOLS;"
 
 # Verify migration connection bypasses pool
-kubectl logs job/bonsai-atlas-migration | grep "connection"
+kubectl logs job/bonsai-migration | grep "connection"
 ```
 
 ### Debug Commands
 
 ```bash
-# Atlas debug mode
+# Migration debug mode
 atlas migrate apply --env production --dry-run --log-level debug
 
 # Database connection test

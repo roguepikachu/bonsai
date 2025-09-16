@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/roguepikachu/bonsai/internal/domain"
 	"github.com/roguepikachu/bonsai/internal/repository"
-	"github.com/roguepikachu/bonsai/pkg/logger"
 )
 
 // SnippetRepository implements repository.SnippetRepository using Postgres.
@@ -25,41 +24,6 @@ func NewSnippetRepository(pool *pgxpool.Pool) *SnippetRepository {
 	return &SnippetRepository{pool: pool}
 }
 
-// EnsureSchema creates required tables if they don't exist.
-func (r *SnippetRepository) EnsureSchema(ctx context.Context) error {
-	// Create table and indices in separate statements to avoid race conditions
-	// when multiple tests run in parallel
-
-	// Create table first
-	const createTable = `
-CREATE TABLE IF NOT EXISTS snippets (
-    id TEXT PRIMARY KEY,
-    content TEXT NOT NULL,
-    tags JSONB NOT NULL DEFAULT '[]'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL,
-    expires_at TIMESTAMPTZ NULL
-);`
-
-	if _, err := r.pool.Exec(ctx, createTable); err != nil {
-		return fmt.Errorf("create table: %w", err)
-	}
-
-	// Create indices separately - ignore errors as they might already exist
-	indices := []string{
-		`CREATE INDEX IF NOT EXISTS idx_snippets_created_at ON snippets (created_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_snippets_expires_at ON snippets (expires_at)`,
-		`CREATE INDEX IF NOT EXISTS idx_snippets_tags_gin ON snippets USING GIN (tags)`,
-	}
-
-	for _, index := range indices {
-		// Ignore errors for indices as they might fail due to race conditions
-		// but the IF NOT EXISTS should handle it
-		_, _ = r.pool.Exec(ctx, index)
-	}
-
-	logger.Info(ctx, "postgres schema ensured")
-	return nil
-}
 
 // Insert adds a new snippet to Postgres.
 func (r *SnippetRepository) Insert(ctx context.Context, s domain.Snippet) error {

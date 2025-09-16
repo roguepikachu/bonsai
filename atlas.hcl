@@ -4,7 +4,7 @@
 # Database environment configurations
 env "local" {
   src = "file://schema"
-  url = env("DATABASE_URL")
+  url = getenv("DATABASE_URL")
   migration {
     dir = "file://atlas-migrations"
   }
@@ -18,7 +18,7 @@ env "local" {
 
 env "dev" {
   src = "file://schema"
-  url = env("DATABASE_URL")
+  url = getenv("DATABASE_URL")
   migration {
     dir = "file://atlas-migrations"
   }
@@ -32,7 +32,7 @@ env "dev" {
 
 env "staging" {
   src = "file://schema"
-  url = env("DATABASE_URL")
+  url = getenv("DATABASE_URL")
   migration {
     dir = "file://atlas-migrations"
   }
@@ -58,7 +58,7 @@ env "staging" {
 
 env "production" {
   src = "file://schema"
-  url = env("DATABASE_URL")
+  url = getenv("DATABASE_URL")
   migration {
     dir = "file://atlas-migrations"
   }
@@ -87,9 +87,3 @@ env "production" {
   }
 }
 
-# Default format for migration files
-format {
-  migrate {
-    diff = "{{ sql . \"  \" }}"
-  }
-}

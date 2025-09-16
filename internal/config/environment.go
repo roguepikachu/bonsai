@@ -31,8 +31,6 @@ type Config struct {
 	PostgresDB string `env:"POSTGRES_DB"`
 	// PostgresSSLMode controls the sslmode parameter when building a DSN (disable, require, verify-ca, verify-full).
 	PostgresSSLMode string `env:"POSTGRES_SSLMODE"`
-	// AutoMigrate, if true, will run light schema migrations on startup.
-	AutoMigrate bool `env:"AUTO_MIGRATE"`
 }
 
 // Conf holds the global configuration for the Bonsai application.

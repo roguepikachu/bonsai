@@ -41,14 +41,9 @@ func main() {
 	if err != nil {
 		logger.Fatal(ctx, "failed to init postgres: %v", err)
 	}
-	// Setup Postgres repository and ensure schema if configured
+	// Setup Postgres repository
 	pgRepo := pgrepo.NewSnippetRepository(pgPool)
 	defer pgPool.Close()
-	if config.Conf.AutoMigrate {
-		if err := pgRepo.EnsureSchema(ctx); err != nil {
-			logger.Fatal(ctx, "failed to ensure postgres schema: %v", err)
-		}
-	}
 
 	// Compose cached repository: Postgres primary + Redis cache
 	repo := cachedrepo.NewSnippetRepository(pgRepo, redisClient, 10*time.Minute)

@@ -17,7 +17,7 @@ table "snippets" {
   column "tags" {
     null    = false
     type    = jsonb
-    default = "'[]'::jsonb"
+    default = sql("'[]'::jsonb")
   }
 
   column "created_at" {
@@ -35,8 +35,7 @@ table "snippets" {
   }
 
   index "idx_snippets_created_at" {
-    columns = [column.created_at]
-    type    = BTREE
+    type = BTREE
     # Use DESC ordering for efficient newest-first queries
     on {
       column = column.created_at

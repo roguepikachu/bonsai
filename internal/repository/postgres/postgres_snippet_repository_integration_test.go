@@ -67,8 +67,8 @@ func TestPostgresRepository_CRUDAndList(t *testing.T) {
 	defer cleanup()
 
 	repo := NewSnippetRepository(pool)
-	if err := repo.EnsureSchema(ctx); err != nil {
-		t.Fatalf("ensure schema: %v", err)
+	if err := createTestSchema(ctx, pool); err != nil {
+		t.Fatalf("create test schema: %v", err)
 	}
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -139,4 +139,35 @@ func domainSnippet(id string, created time.Time, expires *time.Time, tags []stri
 		s.ExpiresAt = *expires
 	}
 	return s
+}
+
+// createTestSchema creates the snippets table and indices for integration tests.
+// For isolated test containers, we can create schema directly rather than using migrations.
+func createTestSchema(ctx context.Context, pool *pgxpool.Pool) error {
+	const createTable = `
+CREATE TABLE IF NOT EXISTS snippets (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NULL
+);`
+
+	if _, err := pool.Exec(ctx, createTable); err != nil {
+		return fmt.Errorf("create table: %w", err)
+	}
+
+	indices := []string{
+		`CREATE INDEX IF NOT EXISTS idx_snippets_created_at ON snippets (created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_snippets_expires_at ON snippets (expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_snippets_tags_gin ON snippets USING GIN (tags)`,
+	}
+
+	for _, index := range indices {
+		if _, err := pool.Exec(ctx, index); err != nil {
+			return fmt.Errorf("create index: %w", err)
+		}
+	}
+
+	return nil
 }
